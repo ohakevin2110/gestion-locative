@@ -8,6 +8,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://apis.google.com/js/api.js" async defer></script>
+<!-- Firebase SDK (compat) pour l'auth par email -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -434,6 +438,43 @@ input, select, textarea {
 #google-signin-btn { display: flex; justify-content: center; margin-bottom: 16px; }
 .login-footer { font-size: 11px; color: #8B8D9E; margin-top: 16px; }
 .login-footer a { color: #6C5CE7; text-decoration: none; }
+/* Toggle Google / Email */
+.auth-tabs {
+  display: flex; gap: 4px; padding: 4px; background: #F1F1F4;
+  border-radius: 10px; margin-bottom: 20px;
+}
+.auth-tab {
+  flex: 1; padding: 10px 12px; border: none; border-radius: 8px; background: transparent;
+  font-size: 13px; font-weight: 600; color: #6B6D82; cursor: pointer; transition: all 0.2s;
+}
+.auth-tab.active { background: #fff; color: #1A1A2E; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.auth-panel { display: none; }
+.auth-panel.active { display: block; }
+/* Formulaire email */
+.email-form { text-align: left; }
+.email-form label { display: block; font-size: 12px; font-weight: 600; color: #1A1A2E; margin-bottom: 6px; }
+.email-form input {
+  width: 100%; padding: 11px 14px; border: 1px solid #E5E5EB; border-radius: 10px;
+  font-size: 14px; margin-bottom: 14px; background: #fff; font-family: inherit;
+  box-sizing: border-box; transition: border-color 0.2s;
+}
+.email-form input:focus { outline: none; border-color: #6C5CE7; }
+.email-form .submit-btn {
+  width: 100%; padding: 12px; border: none; border-radius: 10px;
+  background: #6C5CE7; color: #fff; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: background 0.2s; margin-bottom: 12px;
+}
+.email-form .submit-btn:hover { background: #5a4bc9; }
+.email-form .submit-btn:disabled { background: #bbb; cursor: not-allowed; }
+.email-form .toggle-mode {
+  text-align: center; font-size: 12px; color: #6B6D82;
+}
+.email-form .toggle-mode a { color: #6C5CE7; text-decoration: none; font-weight: 600; cursor: pointer; }
+.email-form .error-msg {
+  background: #FEE; border: 1px solid #FCC; color: #C33;
+  padding: 9px 12px; border-radius: 8px; font-size: 12px; margin-bottom: 12px; display: none;
+}
+.email-form .error-msg.visible { display: block; }
 @media (max-width: 768px) {
   .login-screen {
     padding: 16px !important;
@@ -583,27 +624,61 @@ input, select, textarea {
     </div>
     <h1>Gestion Locative</h1>
     <p class="subtitle">Gérez vos biens, locataires, quittances et paiements.<br>Connectez-vous pour retrouver vos données.</p>
-    <div class="login-features">
-      <div class="feature">
-        <div class="feat-icon">&#x1F3E0;</div>
-        <div class="feat-label">Multi-propriétaire</div>
-        <div class="feat-desc">Gérez plusieurs sociétés et biens</div>
+
+    <!-- Toggle Google / Email -->
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" data-auth-tab="google" onclick="switchAuthTab('google')">Google</button>
+      <button type="button" class="auth-tab" data-auth-tab="email" onclick="switchAuthTab('email')">Email</button>
+    </div>
+
+    <!-- Panel Google (par défaut) -->
+    <div class="auth-panel active" id="auth-panel-google">
+      <div class="login-features">
+        <div class="feature">
+          <div class="feat-icon">&#x1F3E0;</div>
+          <div class="feat-label">Multi-propriétaire</div>
+          <div class="feat-desc">Gérez plusieurs sociétés et biens</div>
+        </div>
+        <div class="feature">
+          <div class="feat-icon">&#x2601;</div>
+          <div class="feat-label">Cloud sync</div>
+          <div class="feat-desc">Données sauvegardées sur Google Drive</div>
+        </div>
+        <div class="feature">
+          <div class="feat-icon">&#x1F4C4;</div>
+          <div class="feat-label">Documents PDF</div>
+          <div class="feat-desc">Quittances et avis d'échéance</div>
+        </div>
       </div>
-      <div class="feature">
-        <div class="feat-icon">&#x2601;</div>
-        <div class="feat-label">Cloud sync</div>
-        <div class="feat-desc">Données sauvegardées sur Google Drive</div>
-      </div>
-      <div class="feature">
-        <div class="feat-icon">&#x1F4C4;</div>
-        <div class="feat-label">Documents PDF</div>
-        <div class="feat-desc">Quittances et avis d'échéance</div>
+      <div id="google-signin-btn"></div>
+      <div class="login-footer">
+        En vous connectant avec Google, vos données sont stockées sur votre Google Drive personnel.
       </div>
     </div>
-    <div id="google-signin-btn"></div>
-    <div class="login-footer">
-      En vous connectant, vos données sont stockées sur votre Google Drive personnel.
+
+    <!-- Panel Email -->
+    <div class="auth-panel" id="auth-panel-email">
+      <form class="email-form" id="email-form" onsubmit="handleEmailSubmit(event); return false;">
+        <div class="error-msg" id="email-error"></div>
+        <div id="email-name-group" style="display:none;">
+          <label for="email-name">Nom</label>
+          <input type="text" id="email-name" autocomplete="name" placeholder="Jean Dupont">
+        </div>
+        <label for="email-address">Email</label>
+        <input type="email" id="email-address" autocomplete="email" required placeholder="vous@exemple.fr">
+        <label for="email-password">Mot de passe</label>
+        <input type="password" id="email-password" autocomplete="current-password" required placeholder="••••••••" minlength="6">
+        <button type="submit" class="submit-btn" id="email-submit-btn">Se connecter</button>
+        <div class="toggle-mode">
+          <span id="email-mode-text">Pas encore de compte ?</span>
+          <a id="email-mode-toggle" onclick="toggleEmailMode()">Créer un compte</a>
+        </div>
+      </form>
+      <div class="login-footer" style="margin-top:16px;">
+        Vos données sont stockées de manière sécurisée dans Firebase (Europe).
+      </div>
     </div>
+
   </div>
 </div>
 
@@ -662,7 +737,7 @@ input, select, textarea {
         <div class="email" id="sidebar-email"></div>
       </div>
     </div>
-    <button onclick="handleLogout()" style="width:100%;margin-top:8px;padding:8px;border:none;border-radius:8px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.6);font-size:11px;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'">&#x1F6AA; Déconnexion</button>
+    <button onclick="handleLogout()" style="width:100%;margin-top:10px;padding:10px 12px;border:1px solid rgba(239,68,68,0.45);border-radius:8px;background:rgba(239,68,68,0.15);color:#fff;font-size:13px;font-weight:600;letter-spacing:0.2px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.35)';this.style.borderColor='rgba(239,68,68,0.8)'" onmouseout="this.style.background='rgba(239,68,68,0.15)';this.style.borderColor='rgba(239,68,68,0.45)'"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Déconnexion</button>
   </div>
 </div>
 
@@ -1769,13 +1844,25 @@ function openBienFiche(bienId) {
         const statut = getPaiementStatut(bail.id, m, cy);
         const paye = statut === 'paye';
         const montant = getMoisTotal(bail, m);
-        if (m <= cm) { totalDu += montant; if (paye) totalEnc += montant; }
+        const isHorsBail = !isBailActifPourMois(bail, m, cy);
+        // Compte dans totaux uniquement si le mois est dans la période du bail ET déjà échu
+        if (m <= cm && !isHorsBail) { totalDu += montant; if (paye) totalEnc += montant; }
         const isTrimMonth = isTrim && trimMois.includes(m);
         const isRelevant = !isTrim || isTrimMonth;
-        const bg = !isRelevant ? 'rgba(0,0,0,0.03)' : (paye ? 'var(--success-light)' : 'var(--danger-light)');
-        const color = !isRelevant ? 'var(--text-muted)' : (paye ? 'var(--success)' : 'var(--danger)');
-        const icon = paye ? '\u2713' : (isRelevant ? '\u2717' : '\u2014');
-        html += '<div style="text-align:center;padding:4px 6px;border-radius:8px;background:' + bg + ';min-width:48px;">';
+        let bg, color, icon;
+        if (isHorsBail) {
+          bg = 'repeating-linear-gradient(45deg,rgba(0,0,0,0.03),rgba(0,0,0,0.03) 3px,rgba(0,0,0,0.06) 3px,rgba(0,0,0,0.06) 6px)';
+          color = 'var(--text-muted)';
+          icon = '\u2014';
+        } else if (!isRelevant) {
+          bg = 'rgba(0,0,0,0.03)'; color = 'var(--text-muted)'; icon = '\u2014';
+        } else {
+          bg = paye ? 'var(--success-light)' : 'var(--danger-light)';
+          color = paye ? 'var(--success)' : 'var(--danger)';
+          icon = paye ? '\u2713' : '\u2717';
+        }
+        const ttl = isHorsBail ? ' title="Hors période du bail"' : '';
+        html += '<div' + ttl + ' style="text-align:center;padding:4px 6px;border-radius:8px;background:' + bg + ';min-width:48px;">';
         html += '<div style="font-size:9px;color:var(--text-light);font-weight:600;">' + moisNoms[m] + '</div>';
         html += '<div style="color:' + color + ';font-weight:700;font-size:13px;">' + icon + '</div>';
         html += '</div>';
@@ -1885,12 +1972,41 @@ function saveFicheBail(bailId, idx, locId) {
   if (msg) { msg.style.display = 'inline'; setTimeout(() => { msg.style.display = 'none'; }, 2000); }
 }
 
+function toggleFicheLocataireTypeFields() {
+  const type = gv('fiche-loc-type');
+  const isSoc = type === 'Société';
+  const partRow = document.getElementById('fiche-loc-particulier-row');
+  const soc1 = document.getElementById('fiche-loc-societe-row-1');
+  const soc2 = document.getElementById('fiche-loc-societe-row-2');
+  if (partRow) partRow.style.display = isSoc ? 'none' : '';
+  if (soc1) soc1.style.display = isSoc ? '' : 'none';
+  if (soc2) soc2.style.display = isSoc ? '' : 'none';
+}
+
 function saveFicheLocataire(locId) {
   const loc = data.locataires.find(x => x.id === locId);
   if (!loc) return;
-  loc.civilite = gv('fiche-loc-civilite');
-  loc.prenom = gv('fiche-loc-prenom');
-  loc.nom = gv('fiche-loc-nom');
+  const type = gv('fiche-loc-type') || 'Particulier';
+  const isSoc = type === 'Société';
+  loc.type = type;
+  if (isSoc) {
+    loc.civilite = gv('fiche-loc-forme') || 'Société';
+    loc.nom = gv('fiche-loc-raisonsociale') || '';
+    loc.prenom = '';
+    loc.siret = gv('fiche-loc-siret') || '';
+    loc.representantPrenom = gv('fiche-loc-repr-prenom') || '';
+    loc.representantNom = gv('fiche-loc-repr-nom') || '';
+    loc.representantFonction = gv('fiche-loc-repr-fonction') || '';
+  } else {
+    loc.civilite = gv('fiche-loc-civilite') || 'M.';
+    loc.prenom = gv('fiche-loc-prenom') || '';
+    loc.nom = gv('fiche-loc-nom') || '';
+    // Nettoyer les champs société si on repasse en Particulier
+    loc.siret = '';
+    loc.representantPrenom = '';
+    loc.representantNom = '';
+    loc.representantFonction = '';
+  }
   loc.adresse = gv('fiche-loc-adresse');
   loc.cp = gv('fiche-loc-cp');
   loc.ville = gv('fiche-loc-ville');
@@ -1945,22 +2061,52 @@ function openLocataireFiche(locId) {
       <span style="color:rgba(255,255,255,.7);font-size:12px;">Fiche locataire \u2014 ${locId}</span>
     </div>
     <div class="card-body">
-      <div class="form-row">
-        <div class="form-group"><label>Civilit\u00e9</label>
-          <select id="fiche-loc-civilite">${['M.','Mr','Mme','Mlle','M. et Mme','Société','SCI','SARL','SAS','EURL'].map(c=>'<option value="'+c+'"'+(loc.civilite===c?' selected':'')+'>'+c+'</option>').join('')}</select>
+      ${(() => {
+        // Détection du type : si champ explicite, on l'utilise ; sinon on déduit de la civilité (backward compat)
+        const societeCiv = ['Société','SCI','SARL','SAS','EURL','SASU'];
+        const inferredType = loc.type || (societeCiv.includes(loc.civilite) ? 'Société' : 'Particulier');
+        const isSoc = inferredType === 'Société';
+        const escV = s => (s||'').replace(/"/g,'&quot;');
+        const civParticulier = ['M.','Mr','Mme','Mlle','M. et Mme'];
+        const formesSociete = ['Société','SCI','SARL','SAS','EURL','SASU'];
+        return `
+        <div class="form-row">
+          <div class="form-group"><label>Type</label>
+            <select id="fiche-loc-type" onchange="toggleFicheLocataireTypeFields()">
+              <option value="Particulier"${!isSoc?' selected':''}>Particulier</option>
+              <option value="Société"${isSoc?' selected':''}>Société</option>
+            </select>
+          </div>
         </div>
-        <div class="form-group"><label>Pr\u00e9nom</label><input type="text" id="fiche-loc-prenom" value="${(loc.prenom||'').replace(/"/g,'&quot;')}"></div>
-        <div class="form-group"><label>Nom</label><input type="text" id="fiche-loc-nom" value="${(loc.nom||'').replace(/"/g,'&quot;')}"></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Adresse</label><input type="text" id="fiche-loc-adresse" value="${(loc.adresse||'').replace(/"/g,'&quot;')}"></div>
-        <div class="form-group"><label>Code postal</label><input type="text" id="fiche-loc-cp" value="${(loc.cp||'').replace(/"/g,'&quot;')}"></div>
-        <div class="form-group"><label>Ville</label><input type="text" id="fiche-loc-ville" value="${(loc.ville||'').replace(/"/g,'&quot;')}"></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>T\u00e9l\u00e9phone</label><input type="text" id="fiche-loc-tel" value="${(loc.tel||'').replace(/"/g,'&quot;')}"></div>
-        <div class="form-group"><label>Email</label><input type="email" id="fiche-loc-email" value="${(loc.email||'').replace(/"/g,'&quot;')}"></div>
-      </div>
+        <div class="form-row" id="fiche-loc-particulier-row" style="${isSoc?'display:none;':''}">
+          <div class="form-group"><label>Civilité</label>
+            <select id="fiche-loc-civilite">${civParticulier.map(c=>'<option value="'+c+'"'+(loc.civilite===c?' selected':'')+'>'+c+'</option>').join('')}</select>
+          </div>
+          <div class="form-group"><label>Prénom</label><input type="text" id="fiche-loc-prenom" value="${escV(loc.prenom)}"></div>
+          <div class="form-group"><label>Nom</label><input type="text" id="fiche-loc-nom" value="${escV(loc.nom)}"></div>
+        </div>
+        <div class="form-row" id="fiche-loc-societe-row-1" style="${!isSoc?'display:none;':''}">
+          <div class="form-group"><label>Forme juridique</label>
+            <select id="fiche-loc-forme">${formesSociete.map(c=>'<option value="'+c+'"'+((isSoc && loc.civilite===c)?' selected':'')+'>'+c+'</option>').join('')}</select>
+          </div>
+          <div class="form-group"><label>Raison sociale</label><input type="text" id="fiche-loc-raisonsociale" value="${escV(isSoc?loc.nom:'')}"></div>
+          <div class="form-group"><label>SIRET</label><input type="text" id="fiche-loc-siret" value="${escV(loc.siret)}" placeholder="14 chiffres"></div>
+        </div>
+        <div class="form-row" id="fiche-loc-societe-row-2" style="${!isSoc?'display:none;':''}">
+          <div class="form-group"><label>Représentant — Prénom</label><input type="text" id="fiche-loc-repr-prenom" value="${escV(loc.representantPrenom)}"></div>
+          <div class="form-group"><label>Représentant — Nom</label><input type="text" id="fiche-loc-repr-nom" value="${escV(loc.representantNom)}"></div>
+          <div class="form-group"><label>Fonction</label><input type="text" id="fiche-loc-repr-fonction" value="${escV(loc.representantFonction)}" placeholder="Gérant, Président…"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Adresse</label><input type="text" id="fiche-loc-adresse" value="${escV(loc.adresse)}"></div>
+          <div class="form-group"><label>Code postal</label><input type="text" id="fiche-loc-cp" value="${escV(loc.cp)}"></div>
+          <div class="form-group"><label>Ville</label><input type="text" id="fiche-loc-ville" value="${escV(loc.ville)}"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Téléphone</label><input type="text" id="fiche-loc-tel" value="${escV(loc.tel)}"></div>
+          <div class="form-group"><label>Email</label><input type="email" id="fiche-loc-email" value="${escV(loc.email)}"></div>
+        </div>`;
+      })()}
       <div style="margin-top:10px;display:flex;gap:10px;align-items:center;">
         <button class="btn btn-success" onclick="saveFicheLocataire('${locId}')" style="padding:10px 24px;">Enregistrer</button>
         <span id="fiche-loc-save-msg" style="font-size:13px;color:var(--success);display:none;">\u2713 Enregistr\u00e9</span>
@@ -2037,16 +2183,28 @@ function openLocataireFiche(locId) {
           const montant = getMoisTotal(bail, m);
           const isTrimMonth = isTrim && trimMois.includes(m);
           const isRelevant = !isTrim || isTrimMonth;
-          const bg = !isRelevant ? '#f5f5f5' : (paye ? '#e8f8f0' : '#fef0ef');
-          const color = !isRelevant ? '#ccc' : (paye ? 'var(--success)' : 'var(--danger)');
-          const border = isTrimMonth ? 'border-left:3px solid var(--warning);' : '';
-          const icon = paye ? '\u2713' : (isRelevant ? '\u2717' : '\u2014');
-          const clickable = isRelevant ? 'cursor:pointer;' : '';
-          const onclick = isRelevant ? ' onclick="togglePaiementFiche(\'' + bail.id + '\',' + m + ',' + annee + ',\'' + locId + '\')"' : '';
-          html += '<div style="text-align:center;padding:4px 6px;border-radius:4px;background:' + bg + ';min-width:48px;' + border + clickable + '"' + onclick + '>';
+          const isHorsBail = !isBailActifPourMois(bail, m, annee);
+          let bg, color, icon, clickable, onclick, border, tooltip = '';
+          if (isHorsBail) {
+            bg = 'repeating-linear-gradient(45deg,#f5f5f5,#f5f5f5 3px,#ececec 3px,#ececec 6px)';
+            color = '#ccc';
+            icon = '\u2014';
+            clickable = '';
+            onclick = '';
+            border = '';
+            tooltip = ' title="Hors période du bail"';
+          } else {
+            bg = !isRelevant ? '#f5f5f5' : (paye ? '#e8f8f0' : '#fef0ef');
+            color = !isRelevant ? '#ccc' : (paye ? 'var(--success)' : 'var(--danger)');
+            border = isTrimMonth ? 'border-left:3px solid var(--warning);' : '';
+            icon = paye ? '\u2713' : (isRelevant ? '\u2717' : '\u2014');
+            clickable = isRelevant ? 'cursor:pointer;' : '';
+            onclick = isRelevant ? ' onclick="togglePaiementFiche(\'' + bail.id + '\',' + m + ',' + annee + ',\'' + locId + '\')"' : '';
+          }
+          html += '<div' + tooltip + ' style="text-align:center;padding:4px 6px;border-radius:4px;background:' + bg + ';min-width:48px;' + border + clickable + '"' + onclick + '>';
           html += '<div style="font-size:9px;color:var(--text-light);font-weight:600;">' + moisNoms[m] + '</div>';
           html += '<div style="color:' + color + ';font-weight:700;font-size:13px;">' + icon + '</div>';
-          if (isRelevant) html += '<div style="font-size:8px;color:var(--text-light);">' + fmt(montant) + '</div>';
+          if (isRelevant && !isHorsBail) html += '<div style="font-size:8px;color:var(--text-light);">' + fmt(montant) + '</div>';
           html += '</div>';
         }
         html += '</div></div>';
@@ -2060,6 +2218,7 @@ function openLocataireFiche(locId) {
   const cm = new Date().getMonth() + 1;
   bauxActifs.forEach(bail => {
     for (let m = 1; m <= cm; m++) {
+      if (!isBailActifPourMois(bail, m, cy)) continue;
       const montant = getMoisTotal(bail, m);
       totalDu += montant;
       if (getPaiementStatut(bail.id, m, cy) === 'paye') totalPaye += montant;
@@ -2453,6 +2612,24 @@ function getMoisTotal(bail, mois) {
   return (bail.loyer || 0) + ch;
 }
 
+// Renvoie true si le bail est actif pendant le mois/année donné
+// (c.-à-d. que la date de début du bail est <= dernier jour du mois, et la date de fin >= premier jour du mois)
+function isBailActifPourMois(bail, mois, annee) {
+  if (!bail) return false;
+  // Premier jour du mois et dernier jour du mois
+  const firstOfMonth = new Date(annee, mois - 1, 1);
+  const lastOfMonth = new Date(annee, mois, 0); // mois=1..12 → dernier jour du mois correct
+  if (bail.debut) {
+    const d = new Date(bail.debut);
+    if (!isNaN(d.getTime()) && d > lastOfMonth) return false;
+  }
+  if (bail.fin) {
+    const f = new Date(bail.fin);
+    if (!isNaN(f.getTime()) && f < firstOfMonth) return false;
+  }
+  return true;
+}
+
 function getPaiementStatut(bailId, mois, annee) {
   const p = data.paiements.find(x => x.bailId === bailId && x.mois === mois && x.annee === annee);
   return p ? p.statut : 'impaye';
@@ -2484,10 +2661,12 @@ function renderPaiements() {
   const isCurrentYear = annee === new Date().getFullYear();
 
   // Calcul global (jusqu'au mois courant pour l'année en cours, toute l'année pour les années passées)
+  // Ne compte QUE les mois où le bail était effectivement actif (entre debut et fin du bail)
   const maxMois = isCurrentYear ? cm : 12;
   let globalEnc = 0, globalDu = 0;
   actifs.forEach(b => {
     for (let m = 1; m <= maxMois; m++) {
+      if (!isBailActifPourMois(b, m, annee)) continue;
       const mt = getMoisTotal(b, m);
       globalDu += mt;
       if (getPaiementStatut(b.id, m, annee) === 'paye') globalEnc += mt;
@@ -2539,6 +2718,7 @@ function renderPaiements() {
 
     let totalEnc = 0, totalDu = 0, nbPaye = 0, nbTotal = 0;
     for (let m = 1; m <= 12; m++) {
+      if (!isBailActifPourMois(bail, m, annee)) continue;
       const mt = getMoisTotal(bail, m);
       totalDu += mt;
       if (getPaiementStatut(bail.id, m, annee) === 'paye') { totalEnc += mt; nbPaye++; }
@@ -2557,9 +2737,17 @@ function renderPaiements() {
       const isRelevant = !isTrim || isTrimMonth || (bail.loyer > 0);
       const isCurrent = isCurrentYear && m === cm;
       const isFuture = isCurrentYear && m > cm;
+      const isHorsBail = !isBailActifPourMois(bail, m, annee); // mois avant la date de début ou après la date de fin
 
       let bg, color, icon, border;
-      if (paye) {
+      let clickable = true;
+      if (isHorsBail) {
+        // Mois hors période du bail : grisé, non cliquable, rien de dû
+        bg = 'repeating-linear-gradient(45deg,rgba(0,0,0,0.03),rgba(0,0,0,0.03) 4px,rgba(0,0,0,0.06) 4px,rgba(0,0,0,0.06) 8px)';
+        color = 'var(--text-muted)';
+        icon = '<span style="font-size:12px;opacity:.6;">\u2014</span>';
+        clickable = false;
+      } else if (paye) {
         bg = 'linear-gradient(135deg,rgba(16,185,129,0.12),rgba(16,185,129,0.04))';
         color = 'var(--success)';
         icon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>';
@@ -2573,12 +2761,16 @@ function renderPaiements() {
         icon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
       }
       border = isCurrent ? 'box-shadow:0 0 0 2px var(--accent);' : '';
-      const trimTag = isTrimMonth ? '<div style="font-size:7px;color:var(--warning);font-weight:700;margin-top:1px;">+CHARGES</div>' : '';
+      const trimTag = (isTrimMonth && !isHorsBail) ? '<div style="font-size:7px;color:var(--warning);font-weight:700;margin-top:1px;">+CHARGES</div>' : '';
+      const cellOnClick = clickable ? 'onclick="togglePaiement(\'' + bail.id + '\',' + m + ',' + annee + ')"' : '';
+      const cellCursor = clickable ? 'cursor:pointer;' : 'cursor:not-allowed;';
+      const cellMontant = isHorsBail ? '&nbsp;' : fmt(montant);
+      const cellTooltip = isHorsBail ? ' title="Hors période du bail"' : '';
 
-      moisHtml += '<div onclick="togglePaiement(\'' + bail.id + '\',' + m + ',' + annee + ')" style="cursor:pointer;text-align:center;padding:8px 4px;border-radius:10px;background:' + bg + ';color:' + color + ';min-width:52px;flex:1;transition:transform 0.15s;' + border + '" onmouseover="this.style.transform=\'scale(1.06)\'" onmouseout="this.style.transform=\'scale(1)\'">' +
+      moisHtml += '<div ' + cellOnClick + cellTooltip + ' style="' + cellCursor + 'text-align:center;padding:8px 4px;border-radius:10px;background:' + bg + ';color:' + color + ';min-width:52px;flex:1;transition:transform 0.15s;' + border + '"' + (clickable ? ' onmouseover="this.style.transform=\'scale(1.06)\'" onmouseout="this.style.transform=\'scale(1)\'"' : '') + '>' +
         '<div style="font-size:10px;font-weight:700;opacity:0.6;margin-bottom:3px;">' + moisCourt[m] + '</div>' +
         '<div>' + icon + '</div>' +
-        '<div style="font-size:10px;font-weight:600;margin-top:2px;">' + fmt(montant) + '</div>' +
+        '<div style="font-size:10px;font-weight:600;margin-top:2px;">' + cellMontant + '</div>' +
         trimTag +
       '</div>';
     }
@@ -2629,6 +2821,7 @@ function renderDashboard() {
   let totalDu = 0, totalPaye = 0;
   actifs.forEach(b => {
     for (let m = 1; m <= cm; m++) {
+      if (!isBailActifPourMois(b, m, cy)) continue;
       const montant = getMoisTotal(b, m);
       totalDu += montant;
       if (getPaiementStatut(b.id, m, cy) === 'paye') totalPaye += montant;
@@ -2652,6 +2845,7 @@ function renderDashboard() {
   // ── Résumé du mois en cours ──
   let moisDu = 0, moisPaye = 0, moisImpayes = [];
   actifs.forEach(b => {
+    if (!isBailActifPourMois(b, cm, cy)) return;
     const montant = getMoisTotal(b, cm);
     moisDu += montant;
     const paye = getPaiementStatut(b.id, cm, cy) === 'paye';
@@ -2725,6 +2919,7 @@ function renderDashboard() {
     const loc = data.locataires.find(x=>x.id===b.locId);
     const proprio = data.proprios.find(x=>x.id===b.proprioId);
     for (let m = 1; m <= cm; m++) {
+      if (!isBailActifPourMois(b, m, cy)) continue;
       if (getPaiementStatut(b.id, m, cy) !== 'paye') {
         const montant = getMoisTotal(b, m);
         impayeRows.push(`<tr>
@@ -2757,6 +2952,7 @@ function renderCharts(actifs, cy, cm) {
   for (let m = 1; m <= 12; m++) {
     let enc = 0, imp = 0;
     actifs.forEach(b => {
+      if (!isBailActifPourMois(b, m, cy)) return;
       const montant = getMoisTotal(b, m);
       if (m <= cm) {
         if (getPaiementStatut(b.id, m, cy) === 'paye') enc += montant; else imp += montant;
@@ -2823,6 +3019,7 @@ function renderAlertes(actifs, cy, cm) {
     const loc = data.locataires.find(x => x.id === b.locId);
     const locNom = loc ? ((loc.prenom||'') + ' ' + (loc.nom||'')).trim() : b.locId;
     for (let m = 1; m <= cm; m++) {
+      if (!isBailActifPourMois(b, m, cy)) continue;
       if (getPaiementStatut(b.id, m, cy) !== 'paye') {
         const dueDate = new Date(cy, m - 1, 1);
         const joursRetard = Math.floor((today - dueDate) / 86400000);
@@ -2997,9 +3194,24 @@ function openModal(type, editId) {
   else if (type === 'locataire') {
     title.textContent = 'Ajouter un locataire';
     body.innerHTML = `
-      <div class="form-row"><div class="form-group"><label>Civilité</label><select id="m-l-civ"><option>M.</option><option>Mr</option><option>Mme</option><option>Mlle</option><option>M. et Mme</option><option>Société</option><option>SCI</option><option>SARL</option><option>SAS</option></select></div>
-      <div class="form-group"><label>Nom</label><input id="m-l-nom"></div>
-      <div class="form-group"><label>Prénom</label><input id="m-l-prenom"></div></div>
+      <div class="form-row"><div class="form-group"><label>Type de locataire</label><select id="m-l-type" onchange="toggleLocataireTypeFields()"><option value="Particulier">Particulier</option><option value="Société">Société</option></select></div></div>
+      <!-- Champs Particulier -->
+      <div class="form-row" id="m-l-particulier-row">
+        <div class="form-group"><label>Civilité</label><select id="m-l-civ"><option>M.</option><option>Mr</option><option>Mme</option><option>Mlle</option><option>M. et Mme</option></select></div>
+        <div class="form-group"><label>Nom</label><input id="m-l-nom"></div>
+        <div class="form-group"><label>Prénom</label><input id="m-l-prenom"></div>
+      </div>
+      <!-- Champs Société (cachés par défaut) -->
+      <div class="form-row" id="m-l-societe-row-1" style="display:none;">
+        <div class="form-group"><label>Forme juridique</label><select id="m-l-forme"><option>Société</option><option>SCI</option><option>SARL</option><option>SAS</option><option>EURL</option><option>SASU</option></select></div>
+        <div class="form-group"><label>Raison sociale</label><input id="m-l-raisonsociale" placeholder="Ex: FLOW STUDIO PARIS"></div>
+        <div class="form-group"><label>SIRET</label><input id="m-l-siret" placeholder="14 chiffres"></div>
+      </div>
+      <div class="form-row" id="m-l-societe-row-2" style="display:none;">
+        <div class="form-group"><label>Représentant — Prénom</label><input id="m-l-repr-prenom" placeholder="Prénom du signataire"></div>
+        <div class="form-group"><label>Représentant — Nom</label><input id="m-l-repr-nom" placeholder="Nom du signataire"></div>
+        <div class="form-group"><label>Représentant — Fonction</label><input id="m-l-repr-fonction" placeholder="Gérant, Président…"></div>
+      </div>
       <div class="form-row"><div class="form-group"><label>Adresse</label><input id="m-l-adresse"></div></div>
       <div class="form-row"><div class="form-group"><label>Code postal</label><input id="m-l-cp"></div>
       <div class="form-group"><label>Ville</label><input id="m-l-ville"></div></div>
@@ -3435,10 +3647,44 @@ function bienFormHTML(propOpts, b) {
     <div id="m-b-credit-preview"></div>`;
 }
 
+function toggleLocataireTypeFields() {
+  const type = gv('m-l-type');
+  const isSociete = type === 'Société';
+  const partRow = document.getElementById('m-l-particulier-row');
+  const soc1 = document.getElementById('m-l-societe-row-1');
+  const soc2 = document.getElementById('m-l-societe-row-2');
+  if (partRow) partRow.style.display = isSociete ? 'none' : '';
+  if (soc1) soc1.style.display = isSociete ? '' : 'none';
+  if (soc2) soc2.style.display = isSociete ? '' : 'none';
+}
+
 function saveLocataire() {
+  const type = gv('m-l-type') || 'Particulier';
+  const isSociete = type === 'Société';
+  let civilite, nom, prenom;
+  let siret = '', representantPrenom = '', representantNom = '', representantFonction = '';
+  if (isSociete) {
+    civilite = gv('m-l-forme') || 'Société';
+    nom = gv('m-l-raisonsociale') || '';
+    prenom = '';
+    siret = gv('m-l-siret') || '';
+    representantPrenom = gv('m-l-repr-prenom') || '';
+    representantNom = gv('m-l-repr-nom') || '';
+    representantFonction = gv('m-l-repr-fonction') || '';
+  } else {
+    civilite = gv('m-l-civ') || 'M.';
+    nom = gv('m-l-nom') || '';
+    prenom = gv('m-l-prenom') || '';
+  }
   data.locataires.push({
-    id: nextId('L', data.locataires), civilite: gv('m-l-civ'), nom: gv('m-l-nom'),
-    prenom: gv('m-l-prenom'), adresse: gv('m-l-adresse'), cp: gv('m-l-cp'),
+    id: nextId('L', data.locataires),
+    type: type,
+    civilite: civilite, nom: nom, prenom: prenom,
+    siret: siret,
+    representantPrenom: representantPrenom,
+    representantNom: representantNom,
+    representantFonction: representantFonction,
+    adresse: gv('m-l-adresse'), cp: gv('m-l-cp'),
     ville: gv('m-l-ville'), tel: gv('m-l-tel'), email: gv('m-l-email')
   });
   saveData(); refreshAll(); closeModal();
@@ -4353,6 +4599,221 @@ function renderRendement() {
   container.innerHTML = html;
 }
 
+// ─── FIREBASE CONFIG — À REMPLIR APRÈS CRÉATION DU PROJET ───
+// Voir FIREBASE_SETUP.md pour les instructions
+const FIREBASE_CONFIG = {
+  apiKey: "REMPLACE_MOI",
+  authDomain: "REMPLACE_MOI",
+  projectId: "REMPLACE_MOI",
+  storageBucket: "REMPLACE_MOI",
+  messagingSenderId: "REMPLACE_MOI",
+  appId: "REMPLACE_MOI"
+};
+
+// ── FIREBASE AUTH + FIRESTORE (email login) ──
+let fbApp = null;
+let fbAuth = null;
+let fbDb = null;
+let fbSignupMode = false; // false = connexion, true = inscription
+let _firestoreSaveDebounce = null;
+
+function initFirebase() {
+  // Si la config n'est pas renseignée, on désactive le tab Email proprement
+  if (!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey === 'REMPLACE_MOI') {
+    console.warn('Firebase non configuré. Voir FIREBASE_SETUP.md');
+    const emailTab = document.querySelector('[data-auth-tab="email"]');
+    if (emailTab) {
+      emailTab.disabled = true;
+      emailTab.style.opacity = '0.4';
+      emailTab.title = 'Firebase non configuré — voir FIREBASE_SETUP.md';
+    }
+    return;
+  }
+  if (typeof firebase === 'undefined') {
+    console.warn('SDK Firebase non chargé');
+    return;
+  }
+  try {
+    fbApp = firebase.initializeApp(FIREBASE_CONFIG);
+    fbAuth = firebase.auth();
+    fbDb = firebase.firestore();
+    // Persistance locale : l'utilisateur reste connecté entre les sessions
+    fbAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(e => console.error(e));
+    // Écoute les changements d'état (auto-restore au chargement si session valide)
+    fbAuth.onAuthStateChanged(handleFirebaseAuthState);
+  } catch(e) {
+    console.error('Init Firebase échoué:', e);
+  }
+}
+
+function handleFirebaseAuthState(user) {
+  if (!user) {
+    // Pas d'utilisateur email connecté — on ne fait rien (l'utilisateur peut être connecté via Google)
+    return;
+  }
+  // Si on a déjà un currentUser Google actif, on ne touche pas
+  if (currentUser && currentUser.provider === 'google') return;
+  // Construire currentUser depuis Firebase
+  currentUser = {
+    email: user.email,
+    name: user.displayName || user.email.split('@')[0],
+    picture: user.photoURL || '',
+    sub: user.uid,
+    provider: 'email'
+  };
+  try { localStorage.setItem('gl_user', JSON.stringify(currentUser)); } catch(e) {}
+  updateSidebarUser();
+  showApp();
+  // Charger depuis Firestore
+  firestoreLoadOrCreate();
+}
+
+// ── UI helpers (toggle tabs + mode signup/signin) ──
+function switchAuthTab(tab) {
+  document.querySelectorAll('.auth-tab').forEach(b => b.classList.toggle('active', b.dataset.authTab === tab));
+  document.querySelectorAll('.auth-panel').forEach(p => p.classList.toggle('active', p.id === 'auth-panel-' + tab));
+  // Reset erreur quand on change d'onglet
+  const err = document.getElementById('email-error');
+  if (err) err.classList.remove('visible');
+}
+
+function toggleEmailMode() {
+  fbSignupMode = !fbSignupMode;
+  const submitBtn = document.getElementById('email-submit-btn');
+  const modeText = document.getElementById('email-mode-text');
+  const modeToggle = document.getElementById('email-mode-toggle');
+  const nameGroup = document.getElementById('email-name-group');
+  const pwdInput = document.getElementById('email-password');
+  if (fbSignupMode) {
+    submitBtn.textContent = 'Créer mon compte';
+    modeText.textContent = 'Déjà un compte ?';
+    modeToggle.textContent = 'Se connecter';
+    nameGroup.style.display = 'block';
+    pwdInput.setAttribute('autocomplete', 'new-password');
+  } else {
+    submitBtn.textContent = 'Se connecter';
+    modeText.textContent = 'Pas encore de compte ?';
+    modeToggle.textContent = 'Créer un compte';
+    nameGroup.style.display = 'none';
+    pwdInput.setAttribute('autocomplete', 'current-password');
+  }
+  const err = document.getElementById('email-error');
+  if (err) err.classList.remove('visible');
+}
+
+function showEmailError(msg) {
+  const err = document.getElementById('email-error');
+  err.textContent = msg;
+  err.classList.add('visible');
+}
+
+function translateFirebaseError(code) {
+  const map = {
+    'auth/invalid-email': 'Adresse email invalide.',
+    'auth/user-not-found': 'Aucun compte trouvé avec cet email.',
+    'auth/wrong-password': 'Mot de passe incorrect.',
+    'auth/invalid-credential': 'Email ou mot de passe incorrect.',
+    'auth/email-already-in-use': 'Un compte existe déjà avec cet email.',
+    'auth/weak-password': 'Mot de passe trop faible (min. 6 caractères).',
+    'auth/too-many-requests': 'Trop de tentatives. Réessayez plus tard.',
+    'auth/network-request-failed': 'Problème réseau. Vérifiez votre connexion.',
+    'auth/operation-not-allowed': 'Méthode non activée dans Firebase.',
+    'auth/unauthorized-domain': 'Ce domaine n\'est pas autorisé dans Firebase.'
+  };
+  return map[code] || ('Erreur : ' + code);
+}
+
+async function handleEmailSubmit(event) {
+  if (event && event.preventDefault) event.preventDefault();
+  if (!fbAuth) {
+    showEmailError('Firebase non configuré. Voir FIREBASE_SETUP.md');
+    return;
+  }
+  const email = document.getElementById('email-address').value.trim();
+  const password = document.getElementById('email-password').value;
+  const name = (document.getElementById('email-name').value || '').trim();
+  const submitBtn = document.getElementById('email-submit-btn');
+  const err = document.getElementById('email-error');
+  err.classList.remove('visible');
+  submitBtn.disabled = true;
+  const originalText = submitBtn.textContent;
+  submitBtn.textContent = 'Patientez…';
+  try {
+    if (fbSignupMode) {
+      const cred = await fbAuth.createUserWithEmailAndPassword(email, password);
+      if (name && cred.user) {
+        try { await cred.user.updateProfile({ displayName: name }); } catch(e) {}
+      }
+      // onAuthStateChanged va prendre le relais et appeler showApp/firestoreLoadOrCreate
+    } else {
+      await fbAuth.signInWithEmailAndPassword(email, password);
+    }
+  } catch(e) {
+    console.error(e);
+    showEmailError(translateFirebaseError(e.code || 'unknown'));
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalText;
+  }
+}
+
+// ── FIRESTORE : lecture/écriture des données de l'utilisateur ──
+function firestoreUserDocRef() {
+  if (!fbDb || !currentUser || !currentUser.sub) return null;
+  return fbDb.collection('users').doc(currentUser.sub).collection('data').doc('main');
+}
+
+async function firestoreLoadOrCreate() {
+  const ref = firestoreUserDocRef();
+  if (!ref) return;
+  const statusEl = document.getElementById('gdrive-status');
+  try {
+    if (statusEl) statusEl.textContent = 'Sync...';
+    const snap = await ref.get();
+    if (snap.exists) {
+      const remote = snap.data();
+      if (remote && remote.payload) {
+        // Même logique de merge que pour Drive : on prend la source la plus riche
+        const localCount = (data.proprios||[]).length + (data.biens||[]).length + (data.locataires||[]).length + (data.baux||[]).length + (data.paiements||[]).length;
+        const r = remote.payload;
+        const remoteCount = (r.proprios||[]).length + (r.biens||[]).length + (r.locataires||[]).length + (r.baux||[]).length + (r.paiements||[]).length;
+        if (remoteCount >= localCount) {
+          data = r;
+          _originalSaveData(); // cache local uniquement, sans ré-uploader
+        } else {
+          await firestoreSave();
+        }
+        refreshAll();
+        if (statusEl) statusEl.textContent = '\u2713 Synchronisé';
+        return;
+      }
+    }
+    // Pas encore de doc — on pousse les données locales
+    await firestoreSave();
+    if (statusEl) statusEl.textContent = '\u2713 Synchronisé';
+  } catch(e) {
+    console.error('Firestore load failed:', e);
+    if (statusEl) statusEl.textContent = 'Erreur sync';
+  }
+}
+
+async function firestoreSave() {
+  const ref = firestoreUserDocRef();
+  if (!ref) return;
+  const statusEl = document.getElementById('gdrive-status');
+  try {
+    if (statusEl) statusEl.textContent = 'Sauvegarde...';
+    await ref.set({
+      payload: data,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: false });
+    if (statusEl) statusEl.textContent = '\u2713 Synchronisé';
+  } catch(e) {
+    console.error('Firestore save failed:', e);
+    if (statusEl) statusEl.textContent = 'Erreur sauvegarde';
+  }
+}
+
 // ── GOOGLE AUTH & DRIVE SYNC (Multi-user) ──
 const GDRIVE_FILE_NAME = 'gestion_locative_data.json';
 const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/gmail.send';
@@ -4360,7 +4821,7 @@ const CLIENT_ID = '618049248733-nd8p759u9ecrnu4tasb1t0uu82t65om1.apps.googleuser
 
 let gdriveToken = null;
 let gdriveFileId = null;
-let currentUser = null; // { email, name, picture, sub }
+let currentUser = null; // { email, name, picture, sub, provider: 'google'|'email' }
 let tokenExpiresAt = 0; // timestamp (ms) when gdriveToken expires
 let _tokenClient = null; // centralized token client
 let _tokenRefreshTimer = null; // auto-refresh timer
@@ -4395,7 +4856,8 @@ function handleCredentialResponse(response) {
     email: payload.email,
     name: payload.name || payload.email.split('@')[0],
     picture: payload.picture || '',
-    sub: payload.sub
+    sub: payload.sub,
+    provider: 'google'
   };
 
   // Save user info for session restore
@@ -4504,12 +4966,19 @@ function updateSidebarUser() {
 }
 
 function handleLogout() {
-  // Revoke token
+  const wasProvider = currentUser && currentUser.provider;
+
+  // Revoke Google token (si applicable)
   if (gdriveToken) {
     try { google.accounts.oauth2.revoke(gdriveToken); } catch(e) {}
   }
   // Clear Google ID session
-  try { google.accounts.id.disableAutoSelect(); } catch(e) {}
+  try { if (typeof google !== 'undefined' && google.accounts) google.accounts.id.disableAutoSelect(); } catch(e) {}
+
+  // Sign out Firebase (si applicable)
+  if (wasProvider === 'email' && fbAuth) {
+    try { fbAuth.signOut(); } catch(e) { console.error(e); }
+  }
 
   gdriveToken = null;
   gdriveFileId = null;
@@ -4521,6 +4990,11 @@ function handleLogout() {
 
   // Show login
   showLogin();
+  // Réinitialiser le formulaire email
+  const emailForm = document.getElementById('email-form');
+  if (emailForm) emailForm.reset();
+  const emailErr = document.getElementById('email-error');
+  if (emailErr) emailErr.classList.remove('visible');
 }
 
 // ── Drive API helpers ──
@@ -4624,11 +5098,15 @@ function forceGdriveSync() {
   gdriveLoadOrCreate();
 }
 
-// Override saveData to auto-sync with Drive
+// Override saveData to auto-sync with the right backend (Drive ou Firestore)
 const _originalSaveData = saveData;
 saveData = function() {
   _originalSaveData();
-  if (gdriveToken) {
+  // Route selon le provider de l'utilisateur connecté
+  if (currentUser && currentUser.provider === 'email' && fbDb && fbAuth && fbAuth.currentUser) {
+    clearTimeout(saveData._debounce);
+    saveData._debounce = setTimeout(firestoreSave, 2000);
+  } else if (gdriveToken) {
     clearTimeout(saveData._debounce);
     saveData._debounce = setTimeout(gdriveSave, 2000);
   }
@@ -5205,11 +5683,12 @@ async function envoyerTousEmails() {
     const savedUser = localStorage.getItem('gl_user');
     if (savedUser) {
       currentUser = JSON.parse(savedUser);
+      // Backward compat : anciens users sans provider → Google
+      if (!currentUser.provider) currentUser.provider = 'google';
       updateSidebarUser();
-      // Load local cached data while we wait for Drive
+      // Load local cached data while we wait for remote sync
       loadData();
-      // Don't show login, but we need to wait for GIS library to load
-      // then auto-select will fire handleCredentialResponse
+      // Skip login screen — auto-restore va prendre le relais (Google auto_select OU Firebase onAuthStateChanged)
       showApp();
     } else {
       // No session — show login, load empty data
@@ -5222,11 +5701,15 @@ async function envoyerTousEmails() {
   }
 })();
 
+// Initialize Firebase as soon as SDK is ready (script is synchronous so should be available)
+// Firebase SDK compat est synchrone → on peut l'init immédiatement
+try { initFirebase(); } catch(e) { console.error('Firebase init error:', e); }
+
 // Initialize Google Identity Services when library is ready
 function onGISLoaded() {
   initGoogleAuth();
-  // If user already has a session, request Drive token silently
-  if (currentUser) {
+  // Si user Google restauré, demande un token Drive en silence
+  if (currentUser && currentUser.provider === 'google') {
     setTimeout(() => {
       try {
         const tc = getTokenClient();
