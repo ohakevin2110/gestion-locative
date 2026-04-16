@@ -1248,19 +1248,8 @@ function retelechargerDoc(histoId) {
   const annee = entry.annee;
   const moisNum = entry.moisNum || MOIS_NUM[mois] || 1;
   const periode = mois + ' ' + annee;
-  const isTrim = bail.periodiciteCharges === 'trimestrielle';
-  const trimMois = isTrim ? (bail.trimestres || '1,4,7,10').split(',').map(Number) : [];
-
-  let loyerAppele, chargesAppelees, periodeLabel;
-  if (isTrim) {
-    loyerAppele = (bail.loyer||0) * 3;
-    chargesAppelees = bail.chargesTrimestrielles || 0;
-    periodeLabel = 'trimestrielle';
-  } else {
-    loyerAppele = bail.loyer || 0;
-    chargesAppelees = bail.charges || 0;
-    periodeLabel = 'mensuelle';
-  }
+  const mp = getMontantsPeriode(bail, moisNum);
+  const { loyerAppele, chargesAppelees, periodeLabel, isLoyerTrim, trimMois } = mp;
 
   if (entry.docType === 'quittance') {
     genQuittancePDF(bail, P, periode, mois, annee, chargesAppelees, loyerAppele, periodeLabel);
@@ -1269,7 +1258,7 @@ function retelechargerDoc(histoId) {
   } else if (entry.docType === 'combine') {
     const moisNoms = ['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
     let prevMoisNum, prevAnneeVal;
-    if (isTrim) {
+    if (isLoyerTrim) {
       const idx = trimMois.indexOf(moisNum);
       const prevIdx = idx > 0 ? idx - 1 : trimMois.length - 1;
       prevMoisNum = trimMois[prevIdx];
@@ -1280,8 +1269,9 @@ function retelechargerDoc(histoId) {
     }
     const prevMoisNom = moisNoms[prevMoisNum];
     const prevPaye = getPaiementStatut(bail.id, prevMoisNum, prevAnneeVal) === 'paye';
-    const qLoyer = prevPaye ? loyerAppele : 0;
-    const qCharges = prevPaye ? chargesAppelees : 0;
+    const mpPrev = getMontantsPeriode(bail, prevMoisNum);
+    const qLoyer = prevPaye ? mpPrev.loyerAppele : 0;
+    const qCharges = prevPaye ? mpPrev.chargesAppelees : 0;
     genCombinePDF(bail, P, prevMoisNom, prevAnneeVal, prevMoisNum, qLoyer, qCharges, prevPaye, mois, parseInt(annee), moisNum, chargesAppelees, loyerAppele, periodeLabel);
   }
 }
@@ -2309,6 +2299,7 @@ function saveFicheBail(bailId, idx, locId) {
   bail.debut = gv(prefix + '-debut');
   bail.fin = gv(prefix + '-fin');
   bail.loyer = parseFloat(gv(prefix + '-loyer')) || 0;
+  bail.periodiciteLoyer = gv(prefix + '-perioloyer') || 'mensuelle';
   bail.periodiciteCharges = gv(prefix + '-periodicite');
   bail.charges = parseFloat(gv(prefix + '-charges')) || 0;
   bail.chargesTrimestrielles = parseFloat(gv(prefix + '-chargestrim')) || 0;
@@ -2491,7 +2482,10 @@ function openLocataireFiche(locId, pushStateFlag) {
       html += '<div class="form-group"><label>Fin</label><input type="date" id="' + prefix + '-fin" value="' + (b.fin || '') + '"></div>';
       html += '</div>';
       html += '<div class="form-row">';
-      html += '<div class="form-group"><label>Loyer HC / mois (\u20ac)</label><input type="number" step="0.01" id="' + prefix + '-loyer" value="' + (b.loyer || 0) + '"></div>';
+      const perioLoyer = getPeriodiciteLoyer(b);
+      const isLoyerTrim = perioLoyer === 'trimestrielle';
+      html += '<div class="form-group"><label>Loyer HC (\u20ac)</label><input type="number" step="0.01" id="' + prefix + '-loyer" value="' + (b.loyer || 0) + '"></div>';
+      html += '<div class="form-group"><label>P\u00e9riodicit\u00e9 loyer</label><select id="' + prefix + '-perioloyer"><option value="mensuelle"' + (!isLoyerTrim ? ' selected' : '') + '>Mensuelle</option><option value="trimestrielle"' + (isLoyerTrim ? ' selected' : '') + '>Trimestrielle</option></select></div>';
       html += '<div class="form-group"><label>P\u00e9riodicit\u00e9 charges</label><select id="' + prefix + '-periodicite" onchange="ficheBailPerioChange(' + idx + ')"><option value="mensuelle"' + (!isTrim ? ' selected' : '') + '>Mensuelle</option><option value="trimestrielle"' + (isTrim ? ' selected' : '') + '>Trimestrielle</option></select></div>';
       html += '<div class="form-group" id="' + prefix + '-charges-mens" style="' + (isTrim ? 'display:none;' : '') + '"><label>Charges / mois (\u20ac)</label><input type="number" step="0.01" id="' + prefix + '-charges" value="' + (b.charges || 0) + '"></div>';
       html += '<div class="form-group" id="' + prefix + '-charges-trim" style="' + (!isTrim ? 'display:none;' : '') + '"><label>Charges / trimestre (\u20ac)</label><input type="number" step="0.01" id="' + prefix + '-chargestrim" value="' + (b.chargesTrimestrielles || 0) + '"></div>';
@@ -2690,13 +2684,9 @@ function ficheGenererDoc(locId, returnBlob) {
   const results = [];
   baux.forEach(bail => {
     const P = data.proprios.find(x => x.id === bail.proprioId) || {};
-    const isTrim = bail.periodiciteCharges === 'trimestrielle';
-    const trimMois = isTrim ? (bail.trimestres || '1,4,7,10').split(',').map(Number) : [];
-    if (isTrim && !trimMois.includes(moisNum)) return;
-
-    let loyerAppele, chargesAppelees, periodeLabel;
-    if (isTrim) { loyerAppele = (bail.loyer||0)*3; chargesAppelees = bail.chargesTrimestrielles||0; periodeLabel = 'trimestrielle'; }
-    else { loyerAppele = bail.loyer||0; chargesAppelees = bail.charges||0; periodeLabel = 'mensuelle'; }
+    const mp = getMontantsPeriode(bail, moisNum);
+    if (mp.skip) return;
+    const { loyerAppele, chargesAppelees, periodeLabel, isLoyerTrim, trimMois } = mp;
 
     if (type === 'quittance') {
       const r = genQuittancePDF(bail, P, periode, mois, annee, chargesAppelees, loyerAppele, periodeLabel, returnBlob);
@@ -2706,12 +2696,13 @@ function ficheGenererDoc(locId, returnBlob) {
       if (r) results.push({ ...r, bail });
     } else if (type === 'combine') {
       let prevMoisNum, prevAnneeVal;
-      if (isTrim) { const idx = trimMois.indexOf(moisNum); const prevIdx = idx > 0 ? idx-1 : trimMois.length-1; prevMoisNum = trimMois[prevIdx]; prevAnneeVal = idx === 0 ? parseInt(annee)-1 : parseInt(annee); }
+      if (isLoyerTrim) { const idx = trimMois.indexOf(moisNum); const prevIdx = idx > 0 ? idx-1 : trimMois.length-1; prevMoisNum = trimMois[prevIdx]; prevAnneeVal = idx === 0 ? parseInt(annee)-1 : parseInt(annee); }
       else { prevMoisNum = moisNum === 1 ? 12 : moisNum-1; prevAnneeVal = moisNum === 1 ? parseInt(annee)-1 : parseInt(annee); }
       const prevMoisNom = moisNoms[prevMoisNum];
       const prevPaye = getPaiementStatut(bail.id, prevMoisNum, prevAnneeVal) === 'paye';
-      const qLoyer = prevPaye ? loyerAppele : 0;
-      const qCharges = prevPaye ? chargesAppelees : 0;
+      const mpPrev = getMontantsPeriode(bail, prevMoisNum);
+      const qLoyer = prevPaye ? mpPrev.loyerAppele : 0;
+      const qCharges = prevPaye ? mpPrev.chargesAppelees : 0;
       const r = genCombinePDF(bail, P, prevMoisNom, prevAnneeVal, prevMoisNum, qLoyer, qCharges, prevPaye, mois, parseInt(annee), moisNum, chargesAppelees, loyerAppele, periodeLabel, returnBlob);
       if (r) results.push({ ...r, bail });
     }
@@ -2804,13 +2795,9 @@ function ficheEnvoyerEmail(locId) {
   baux.forEach(bail => {
     const P = data.proprios.find(x => x.id === bail.proprioId) || {};
     const bien = data.biens.find(x => x.id === bail.bienId);
-    const isTrim = bail.periodiciteCharges === 'trimestrielle';
-    const trimMois = isTrim ? (bail.trimestres || '1,4,7,10').split(',').map(Number) : [];
-    if (isTrim && !trimMois.includes(moisNum)) return;
-
-    let loyerAppele, chargesAppelees, periodeLabel;
-    if (isTrim) { loyerAppele = (bail.loyer||0)*3; chargesAppelees = bail.chargesTrimestrielles||0; periodeLabel = 'trimestrielle'; }
-    else { loyerAppele = bail.loyer||0; chargesAppelees = bail.charges||0; periodeLabel = 'mensuelle'; }
+    const mp = getMontantsPeriode(bail, moisNum);
+    if (mp.skip) return;
+    const { loyerAppele, chargesAppelees, periodeLabel } = mp;
 
     const vars = {
       civilite: loc.civilite||'', prenom: loc.prenom||'', nom: loc.nom||'',
@@ -2925,10 +2912,13 @@ function renderLocataires() {
       const rf = (l.representantFonction || '').trim();
       const reprNom = (rp + ' ' + rn).trim();
       if (reprNom || rf) {
-        prenomCell = `<div style="font-size:13px;">${reprNom || '—'}</div>`
+        const reprLink = reprNom
+          ? `<a href="#" onclick="event.preventDefault();openLocataireFiche('${l.id}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;font-size:13px;">${reprNom}</a>`
+          : `<span style="font-size:13px;color:var(--text-muted);">—</span>`;
+        prenomCell = reprLink
           + (rf ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${rf}</div>` : '');
       } else {
-        prenomCell = `<span style="color:var(--text-muted);font-style:italic;font-size:12px;">Pas de représentant</span>`;
+        prenomCell = `<a href="#" onclick="event.preventDefault();openLocataireFiche('${l.id}')" style="color:var(--text-muted);font-style:italic;font-size:12px;text-decoration:none;cursor:pointer;" title="Ouvrir la fiche pour ajouter un représentant">Pas de représentant</a>`;
       }
     } else {
       prenomCell = `<a href="#" onclick="event.preventDefault();openLocataireFiche('${l.id}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">${l.prenom || ''}</a>`;
@@ -2988,13 +2978,60 @@ function initPaiementAnnee() {
   sel.innerHTML = years.map(y => `<option value="${y}" ${y===selectedYear?'selected':''}>${y}</option>`).join('');
 }
 
+// Périodicité du loyer : mensuelle ou trimestrielle.
+// Rétrocompat : si pas défini, on déduit de la périodicité des charges (comportement historique).
+function getPeriodiciteLoyer(bail) {
+  if (bail && bail.periodiciteLoyer) return bail.periodiciteLoyer;
+  return (bail && bail.periodiciteCharges === 'trimestrielle') ? 'trimestrielle' : 'mensuelle';
+}
+
+// Renvoie les montants à facturer pour un bail sur un mois donné (1..12)
+// ainsi que des flags pour piloter l'affichage / la génération de docs.
+// - skip : true si le loyer est trimestriel et le mois n'est pas un mois d'échéance
+// - loyerAppele : montant loyer (x3 si trim)
+// - chargesAppelees : charges du mois
+// - periodeLabel : 'mensuelle' ou 'trimestrielle'
+function getMontantsPeriode(bail, moisNum) {
+  const periLoyer = getPeriodiciteLoyer(bail);
+  const periCharges = (bail && bail.periodiciteCharges) || 'mensuelle';
+  const isLoyerTrim = periLoyer === 'trimestrielle';
+  const isChargesTrim = periCharges === 'trimestrielle';
+  const trimMois = ((bail && bail.trimestres) || '1,4,7,10').split(',').map(Number);
+  const isTrimMonth = trimMois.includes(moisNum);
+  const skip = isLoyerTrim && !isTrimMonth;
+  const loyerAppele = isLoyerTrim ? (bail.loyer || 0) * 3 : (bail.loyer || 0);
+  const chargesAppelees = isChargesTrim
+    ? (isTrimMonth ? (bail.chargesTrimestrielles || 0) : 0)
+    : (bail.charges || 0);
+  const periodeLabel = isLoyerTrim ? 'trimestrielle' : 'mensuelle';
+  return { skip, loyerAppele, chargesAppelees, periodeLabel, isLoyerTrim, isChargesTrim, isTrimMonth, trimMois };
+}
+
 function getMoisTotal(bail, mois) {
-  let ch = bail.charges || 0;
-  if (bail.periodiciteCharges === 'trimestrielle') {
-    const tm = (bail.trimestres || '1,4,7,10').split(',').map(Number);
-    ch = tm.includes(mois) ? (bail.chargesTrimestrielles || 0) : 0;
+  const periLoyer = getPeriodiciteLoyer(bail);
+  const periCharges = bail.periodiciteCharges || 'mensuelle';
+  const tm = (bail.trimestres || '1,4,7,10').split(',').map(Number);
+  const isTrimMonth = tm.includes(mois);
+
+  // Charges du mois
+  let ch = 0;
+  if (periCharges === 'trimestrielle') {
+    ch = isTrimMonth ? (bail.chargesTrimestrielles || 0) : 0;
+  } else {
+    ch = bail.charges || 0;
   }
-  return (bail.loyer || 0) + ch;
+
+  // Loyer du mois
+  let loyer = 0;
+  if (periLoyer === 'trimestrielle') {
+    // Loyer payé en 1 fois par trimestre : loyer x 3 aux mois d'échéance, 0 les autres mois
+    loyer = isTrimMonth ? (bail.loyer || 0) * 3 : 0;
+  } else {
+    // Loyer mensuel
+    loyer = bail.loyer || 0;
+  }
+
+  return loyer + ch;
 }
 
 // Renvoie true si le bail est actif pendant le mois/année donné
@@ -3119,7 +3156,7 @@ function renderPaiements() {
       const paye = statut === 'paye';
       const montant = getMoisTotal(bail, m);
       const isTrimMonth = isTrim && trimMois.includes(m);
-      const isRelevant = !isTrim || isTrimMonth || (bail.loyer > 0);
+      const isRelevant = montant > 0;
       const isCurrent = isCurrentYear && m === cm;
       const isFuture = isCurrentYear && m > cm;
       const isHorsBail = !isBailActifPourMois(bail, m, annee); // mois avant la date de début ou après la date de fin
@@ -3617,7 +3654,8 @@ function openModal(type, editId) {
       <div class="form-group"><label>Locataire</label><select id="m-ba-loc">${locOpts}</select></div></div>
       <div class="form-row"><div class="form-group"><label>Date début</label><input id="m-ba-debut" type="date"></div>
       <div class="form-group"><label>Date fin</label><input id="m-ba-fin" type="date"></div></div>
-      <div class="form-row"><div class="form-group"><label>Loyer HT mensuel (€)</label><input id="m-ba-loyer" type="number" step="0.01"></div>
+      <div class="form-row"><div class="form-group"><label>Loyer HC (€)</label><input id="m-ba-loyer" type="number" step="0.01"></div>
+      <div class="form-group"><label>Périodicité loyer</label><select id="m-ba-perioloyer"><option value="mensuelle">Mensuelle</option><option value="trimestrielle">Trimestrielle</option></select></div>
       <div class="form-group"><label>Dépôt de garantie (€)</label><input id="m-ba-depot" type="number" step="0.01"></div></div>
       <div class="form-row"><div class="form-group"><label>Montant charges (€)</label><input id="m-ba-charges" type="number" step="0.01"></div>
       <div class="form-group"><label>Périodicité charges</label><select id="m-ba-periocharges" onchange="document.getElementById('m-ba-trimestres-group').style.display = this.value==='trimestrielle' ? '' : 'none'"><option value="mensuelle">Mensuelle</option><option value="trimestrielle">Trimestrielle</option><option value="annuelle">Annuelle</option></select></div>
@@ -4081,12 +4119,14 @@ function saveBail() {
   const proprioId = bien ? bien.proprioId : '';
   if (!proprioId) { alert('Ce bien n\'a pas de propriétaire. Modifiez le bien d\'abord.'); return; }
   const perioCharges = gv('m-ba-periocharges');
+  const perioLoyer = gv('m-ba-perioloyer') || 'mensuelle';
   const chargesMontant = parseFloat(gv('m-ba-charges'))||0;
   data.baux.push({
     id: nextId('BAIL-', data.baux), proprioId: proprioId,
     bienId: bienId, locId: gv('m-ba-loc'),
     debut: gv('m-ba-debut'), fin: gv('m-ba-fin'),
     loyer: parseFloat(gv('m-ba-loyer'))||0,
+    periodiciteLoyer: perioLoyer,
     charges: perioCharges==='mensuelle' ? chargesMontant : 0,
     chargesTrimestrielles: perioCharges==='trimestrielle' ? chargesMontant : 0,
     periodiciteCharges: perioCharges,
@@ -4167,12 +4207,9 @@ function ficheBienEnvoyerEmail(bienId) {
     if (!loc || !loc.email) return;
     const P = data.proprios.find(x => x.id === bail.proprioId) || {};
     const bien = data.biens.find(x => x.id === bail.bienId);
-    const isTrim = bail.periodiciteCharges === 'trimestrielle';
-    const trimMois = isTrim ? (bail.trimestres || '1,4,7,10').split(',').map(Number) : [];
-    if (isTrim && !trimMois.includes(moisNum)) return;
-    let loyerAppele, chargesAppelees, periodeLabel;
-    if (isTrim) { loyerAppele = (bail.loyer||0)*3; chargesAppelees = bail.chargesTrimestrielles||0; periodeLabel = 'trimestrielle'; }
-    else { loyerAppele = bail.loyer||0; chargesAppelees = bail.charges||0; periodeLabel = 'mensuelle'; }
+    const mp = getMontantsPeriode(bail, moisNum);
+    if (mp.skip) return;
+    const { loyerAppele, chargesAppelees, periodeLabel } = mp;
     const vars = {
       civilite: loc.civilite||'', prenom: loc.prenom||'', nom: loc.nom||'',
       email: loc.email, bien: bien ? bien.designation : bail.bienId,
@@ -4244,25 +4281,13 @@ function genererDocuments() {
 
   baux.forEach(bail => {
     const P = data.proprios.find(x=>x.id===bail.proprioId) || {nom:'',adresse:'',cp:'',ville:'',siret:''};
-    const isTrim = bail.periodiciteCharges === 'trimestrielle';
-    const trimMois = isTrim ? (bail.trimestres || '1,4,7,10').split(',').map(Number) : [];
+    const mp = getMontantsPeriode(bail, moisNum);
+    const { loyerAppele, chargesAppelees, periodeLabel, isLoyerTrim, trimMois } = mp;
 
-    // Pour les baux trimestriels : on ne g\u00e9n\u00e8re que sur les mois d'\u00e9ch\u00e9ance
-    if (isTrim && !trimMois.includes(moisNum)) {
+    // Pour les baux \u00e0 loyer trimestriel : on ne g\u00e9n\u00e8re que sur les mois d'\u00e9ch\u00e9ance
+    if (mp.skip) {
       skipped++;
-      return; // pas de document ce mois pour ce bail trimestriel
-    }
-
-    // Calcul du loyer appel\u00e9 et des charges
-    let loyerAppele, chargesAppelees, periodeLabel;
-    if (isTrim) {
-      loyerAppele = (bail.loyer||0) * 3; // loyer x 3 mois
-      chargesAppelees = bail.chargesTrimestrielles || 0;
-      periodeLabel = 'trimestrielle';
-    } else {
-      loyerAppele = bail.loyer || 0;
-      chargesAppelees = bail.charges || 0;
-      periodeLabel = 'mensuelle';
+      return;
     }
 
     if (type==='quittance') {
@@ -4272,12 +4297,9 @@ function genererDocuments() {
       genAvisPDF(bail, P, periode, mois, annee, chargesAppelees, loyerAppele, periodeLabel);
     }
     else if (type==='combine') {
-      // COMBIN\u00c9 = Quittance du mois/trimestre PR\u00c9C\u00c9DENT + Avis du mois/trimestre S\u00c9LECTIONN\u00c9
-      // Ex: si on s\u00e9lectionne F\u00e9vrier -> Quittance Janvier + Avis F\u00e9vrier
-
-      // 1) Quittance = p\u00e9riode pr\u00e9c\u00e9dente
+      // COMBIN\u00c9 = Quittance p\u00e9riode PR\u00c9C\u00c9DENTE + Avis p\u00e9riode S\u00c9LECTIONN\u00c9E
       let prevMoisNum, prevAnneeVal;
-      if (isTrim) {
+      if (isLoyerTrim) {
         const idx = trimMois.indexOf(moisNum);
         const prevIdx = idx > 0 ? idx - 1 : trimMois.length - 1;
         prevMoisNum = trimMois[prevIdx];
@@ -4288,10 +4310,10 @@ function genererDocuments() {
       }
       const prevMoisNom = moisNoms[prevMoisNum];
       const prevPaye = getPaiementStatut(bail.id, prevMoisNum, prevAnneeVal) === 'paye';
-      const qLoyer = prevPaye ? loyerAppele : 0;
-      const qCharges = prevPaye ? chargesAppelees : 0;
+      const mpPrev = getMontantsPeriode(bail, prevMoisNum);
+      const qLoyer = prevPaye ? mpPrev.loyerAppele : 0;
+      const qCharges = prevPaye ? mpPrev.chargesAppelees : 0;
 
-      // 2) Avis = mois s\u00e9lectionn\u00e9 (moisNum courant)
       genCombinePDF(bail, P, prevMoisNom, prevAnneeVal, prevMoisNum, qLoyer, qCharges, prevPaye, mois, parseInt(annee), moisNum, chargesAppelees, loyerAppele, periodeLabel);
     }
     count++;
@@ -5644,21 +5666,10 @@ async function genererDocumentsDrive() {
     const P = data.proprios.find(x => x.id === bail.proprioId) || { nom: '', adresse: '', cp: '', ville: '', siret: '' };
     const loc = data.locataires.find(x => x.id === bail.locId) || {};
     const bien = data.biens.find(x => x.id === bail.bienId) || {};
-    const isTrim = bail.periodiciteCharges === 'trimestrielle';
-    const trimMois = isTrim ? (bail.trimestres || '1,4,7,10').split(',').map(Number) : [];
+    const mp = getMontantsPeriode(bail, moisNum);
+    const { loyerAppele, chargesAppelees, periodeLabel, isLoyerTrim, trimMois } = mp;
 
-    if (isTrim && !trimMois.includes(moisNum)) { skipped++; continue; }
-
-    let loyerAppele, chargesAppelees, periodeLabel;
-    if (isTrim) {
-      loyerAppele = (bail.loyer || 0) * 3;
-      chargesAppelees = bail.chargesTrimestrielles || 0;
-      periodeLabel = 'trimestrielle';
-    } else {
-      loyerAppele = bail.loyer || 0;
-      chargesAppelees = bail.charges || 0;
-      periodeLabel = 'mensuelle';
-    }
+    if (mp.skip) { skipped++; continue; }
 
     // G\u00e9n\u00e9rer le PDF en mode blob
     let pdfResult;
@@ -5669,7 +5680,7 @@ async function genererDocumentsDrive() {
         pdfResult = genAvisPDF(bail, P, periode, mois, annee, chargesAppelees, loyerAppele, periodeLabel, true);
       } else if (type === 'combine') {
         let prevMoisNum, prevAnneeVal;
-        if (isTrim) {
+        if (isLoyerTrim) {
           const idx = trimMois.indexOf(moisNum);
           const prevIdx = idx > 0 ? idx - 1 : trimMois.length - 1;
           prevMoisNum = trimMois[prevIdx];
@@ -5680,8 +5691,9 @@ async function genererDocumentsDrive() {
         }
         const prevMoisNom = moisNoms[prevMoisNum];
         const prevPaye = getPaiementStatut(bail.id, prevMoisNum, prevAnneeVal) === 'paye';
-        const qLoyer = prevPaye ? loyerAppele : 0;
-        const qCharges = prevPaye ? chargesAppelees : 0;
+        const mpPrev = getMontantsPeriode(bail, prevMoisNum);
+        const qLoyer = prevPaye ? mpPrev.loyerAppele : 0;
+        const qCharges = prevPaye ? mpPrev.chargesAppelees : 0;
         pdfResult = genCombinePDF(bail, P, prevMoisNom, prevAnneeVal, prevMoisNum, qLoyer, qCharges, prevPaye, mois, parseInt(annee), moisNum, chargesAppelees, loyerAppele, periodeLabel, true);
       }
 
@@ -5813,20 +5825,9 @@ function ouvrirEnvoiEmail() {
     const bien = data.biens.find(x => x.id === bail.bienId);
     if (!loc || !loc.email) return;
 
-    const isTrim = bail.periodiciteCharges === 'trimestrielle';
-    const trimMois = isTrim ? (bail.trimestres || '1,4,7,10').split(',').map(Number) : [];
-    if (isTrim && !trimMois.includes(moisNum)) return;
-
-    let loyerAppele, chargesAppelees, periodeLabel;
-    if (isTrim) {
-      loyerAppele = (bail.loyer||0) * 3;
-      chargesAppelees = bail.chargesTrimestrielles || 0;
-      periodeLabel = 'trimestrielle';
-    } else {
-      loyerAppele = bail.loyer || 0;
-      chargesAppelees = bail.charges || 0;
-      periodeLabel = 'mensuelle';
-    }
+    const mp = getMontantsPeriode(bail, moisNum);
+    if (mp.skip) return;
+    const { loyerAppele, chargesAppelees, periodeLabel } = mp;
 
     const vars = {
       civilite: loc.civilite || '',
@@ -5971,10 +5972,10 @@ function genererPDFBlob(eq) {
   } else if (eq.type === 'avis') {
     return genAvisPDF(bail, P, periode, mois, annee, eq.chargesAppelees, eq.loyerAppele, eq.periodeLabel, true);
   } else if (eq.type === 'combine') {
-    const isTrim = bail.periodiciteCharges === 'trimestrielle';
-    const trimMois = isTrim ? (bail.trimestres||'1,4,7,10').split(',').map(Number) : [];
+    const mpCur = getMontantsPeriode(bail, moisNum);
+    const { isLoyerTrim, trimMois } = mpCur;
     let prevMoisNum, prevAnneeVal;
-    if (isTrim) {
+    if (isLoyerTrim) {
       const idx = trimMois.indexOf(moisNum);
       const prevIdx = idx > 0 ? idx - 1 : trimMois.length - 1;
       prevMoisNum = trimMois[prevIdx];
@@ -5985,8 +5986,9 @@ function genererPDFBlob(eq) {
     }
     const prevMoisNom = moisNoms[prevMoisNum];
     const prevPaye = getPaiementStatut(bail.id, prevMoisNum, prevAnneeVal) === 'paye';
-    const qLoyer = prevPaye ? eq.loyerAppele : 0;
-    const qCharges = prevPaye ? eq.chargesAppelees : 0;
+    const mpPrev = getMontantsPeriode(bail, prevMoisNum);
+    const qLoyer = prevPaye ? mpPrev.loyerAppele : 0;
+    const qCharges = prevPaye ? mpPrev.chargesAppelees : 0;
     return genCombinePDF(bail, P, prevMoisNom, prevAnneeVal, prevMoisNum, qLoyer, qCharges, prevPaye, mois, parseInt(annee), moisNum, eq.chargesAppelees, eq.loyerAppele, eq.periodeLabel, true);
   }
   return null;
