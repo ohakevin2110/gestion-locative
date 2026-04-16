@@ -1142,7 +1142,14 @@ function logActivity(opts) {
     details: opts.details || ''
   });
   // Keep max 500 entries
-  if (data.historique.length > 500) data.historique = data.historique.slice(-500);
+  if (data.historique.length > 500) {
+    // #16 Avertissement discret (1 fois par session) quand on atteint la limite
+    if (!window._historiqueWarnShown) {
+      window._historiqueWarnShown = true;
+      console.warn('Historique d\'activit\u00e9 plafonn\u00e9 \u00e0 500 entr\u00e9es. Les plus anciennes sont supprim\u00e9es. Pensez \u00e0 exporter votre JSON p\u00e9riodiquement.');
+    }
+    data.historique = data.historique.slice(-500);
+  }
 }
 
 // Historique structuré des documents générés (pour re-téléchargement)
@@ -1200,7 +1207,12 @@ function renderHistoriqueDocs() {
   const btnLess = document.getElementById('histo-show-less');
   if (!listEl) return;
 
-  const all = (data.documentsGeneres || []).slice().reverse(); // plus récent en premier
+  // #4 Appliquer le filtre propriétaire global
+  let all = (data.documentsGeneres || []).slice();
+  if (typeof filtreProprioId !== 'undefined' && filtreProprioId !== 'all') {
+    all = all.filter(d => d.proprioId === filtreProprioId);
+  }
+  all = all.reverse(); // plus récent en premier
   if (badge) badge.textContent = all.length;
 
   if (!all.length) {
@@ -1220,7 +1232,7 @@ function renderHistoriqueDocs() {
     const bien = data.biens.find(b => b.id === d.bienId);
     const bailExists = !!bail;
     const bienLabel = bien ? (bien.designation || '') : '';
-    const locLabel = loc ? ((loc.prenom||'') + ' ' + (loc.nom||'')).trim() : '';
+    const locLabel = loc ? getLocataireName(loc) : '';
     const archiveIcon = d.archive === 'drive'
       ? '<span title="Archivé sur Google Drive" style="color:#00B894;font-size:11px;">☁ Drive</span>'
       : '<span title="Téléchargé localement" style="color:var(--text-muted);font-size:11px;">⤓ Local</span>';
@@ -1524,14 +1536,29 @@ if (location.hash) {
 function restorePendingHashRoute() {
   if (!_pendingHashRoute) return;
   const route = _pendingHashRoute;
+
+  // #21 Si la donn\u00e9e cible n'est pas encore dispo (sync Drive en cours),
+  //    on retente plusieurs fois avant de se rabattre sur la liste.
+  const hasTarget = (route.page === 'bien-detail' && route.id && data.biens && data.biens.find(b => b.id === route.id))
+    || (route.page === 'locataire-detail' && route.id && data.locataires && data.locataires.find(l => l.id === route.id))
+    || (route.page !== 'bien-detail' && route.page !== 'locataire-detail');
+  if (!hasTarget) {
+    // Retry max 10 fois (10 × 500ms = 5 s) pour laisser la sync Drive se terminer
+    if (!window._hashRestoreRetries) window._hashRestoreRetries = 0;
+    if (window._hashRestoreRetries < 10) {
+      window._hashRestoreRetries++;
+      setTimeout(() => { restorePendingHashRoute(); }, 500);
+      return;
+    }
+  }
+  window._hashRestoreRetries = 0;
   _pendingHashRoute = null;
+
   const ok = navigateFromRoute(route, false);
   if (ok) {
-    // Normaliser l'URL + remplacer l'état (pas de pushState parasite)
     history.replaceState({ page: route.page, id: route.id }, '',
       '#' + route.page + (route.id ? '/' + route.id : ''));
   } else {
-    // Fallback (bien/locataire disparu) : synchroniser le hash avec la page réellement affichée
     const fbPage = route.page === 'bien-detail' ? 'biens' : 'locataires';
     history.replaceState({ page: fbPage }, '', '#' + fbPage);
   }
@@ -1611,6 +1638,11 @@ let _refreshScheduled = false;
 function refreshAll() {
   renderFiltreProprioSelect();
   renderProprios(); renderBiens(); renderLocataires(); renderBaux(); renderPaiements(); renderRendement(); renderGenSelects(); updateBadges();
+  // #15 Si la page Impay\u00e9s est visible, la rafra\u00eechir aussi (coh\u00e9rence avec filtre proprio)
+  const impayesPage = document.getElementById('page-impayes');
+  if (impayesPage && impayesPage.classList.contains('active') && typeof renderImpayes === 'function') {
+    renderImpayes();
+  }
   // D\u00e9f\u00e9rer le dashboard+charts pour ne pas bloquer l'UI
   if (!_refreshScheduled) {
     _refreshScheduled = true;
@@ -2206,7 +2238,7 @@ function openBienFiche(bienId, pushStateFlag) {
     html += '<table><thead><tr><th>Locataire</th><th>D\u00e9but</th><th>Fin</th><th>Loyer</th><th>Statut</th></tr></thead><tbody>';
     baux.forEach(b => {
       const loc = data.locataires.find(x => x.id === b.locId);
-      const locNom = loc ? ((loc.prenom||'') + ' ' + (loc.nom||'')).trim() : b.locId;
+      const locNom = loc ? getLocataireName(loc) : b.locId;
       const st = b.statut === 'Actif' ? 'active' : '';
       html += '<tr><td><a href="#" onclick="event.preventDefault();openLocataireFiche(\'' + b.locId + '\')" style="color:var(--accent);font-weight:600;text-decoration:none;">' + locNom + '</a></td>';
       html += '<td>' + fmtDate(b.debut) + '</td><td>' + fmtDate(b.fin) + '</td>';
@@ -2225,7 +2257,7 @@ function openBienFiche(bienId, pushStateFlag) {
     let totalEnc = 0, totalDu = 0;
     bauxActifs.forEach(bail => {
       const loc = data.locataires.find(x => x.id === bail.locId);
-      const locNom = loc ? ((loc.prenom||'') + ' ' + (loc.nom||'')).trim() : bail.locId;
+      const locNom = loc ? getLocataireName(loc) : bail.locId;
       const isTrim = bail.periodiciteCharges === 'trimestrielle';
       const trimMois = isTrim ? (bail.trimestres || '1,4,7,10').split(',').map(Number) : [];
       html += '<div style="margin-bottom:10px;"><span style="font-size:12px;font-weight:600;color:var(--text-light);">' + locNom + ' (' + bail.id + ')</span>';
@@ -2811,7 +2843,7 @@ async function ficheArchiverDrive(locId) {
       const loc = data.locataires.find(x => x.id === locId) || {};
       const bien = data.biens.find(x => x.id === doc.bail.bienId) || {};
       const proprioNom = (P.nom || 'Sans propri\u00e9taire').replace(/[/\\:*?"<>|]/g, '_');
-      const locNom = ((loc.prenom||'') + ' ' + (loc.nom||'')).trim() || 'Sans locataire';
+      const locNom = getLocataireName(loc) || 'Sans locataire';
       const bienLabel = ((bien.designation || doc.bail.bienId) + ' - ' + locNom).replace(/[/\\:*?"<>|]/g, '_');
       const folderPath = ['Gestion Locative', proprioNom, bienLabel, annee.toString()];
       const folderId = await gdriveEnsureFolderPath(folderPath);
@@ -2958,38 +2990,48 @@ function renderLocataires() {
   tb.innerHTML = filtered.map((l) => {
     const i = data.locataires.indexOf(l);
     const isSoc = (l.type === 'Société') || (!l.type && societeCiv.includes(l.civilite));
-    // Colonne 1 (après ID) : civilité ou forme juridique + badge Société
+    // #2 XSS : toutes les données user échappées
+    const eId = escapeHtml(l.id);
+    const eCiv = escapeHtml(l.civilite || '');
+    const eNom = escapeHtml(l.nom || '');
+    const ePrenom = escapeHtml(l.prenom || '');
+    const eSiret = escapeHtml(l.siret || '');
+    const eAdresse = escapeHtml(l.adresse || '');
+    const eCp = escapeHtml(l.cp || '');
+    const eVille = escapeHtml(l.ville || '');
+    const eTel = escapeHtml(l.tel || '');
+    const eEmail = escapeHtml(l.email || '');
     const civCell = isSoc
-      ? `<span class="proprio-tag societe" style="font-size:11px;">${l.civilite || 'Société'}</span>`
-      : (l.civilite || '');
-    // Colonne Nom
-    const nomCell = `<a href="#" onclick="event.preventDefault();openLocataireFiche('${l.id}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">${l.nom || ''}</a>`
-      + (isSoc && l.siret ? `<div style="font-size:11px;color:var(--text-muted);font-weight:400;margin-top:2px;">SIRET ${l.siret}</div>` : '');
-    // Colonne Prénom : pour les sociétés on affiche le représentant
+      ? `<span class="proprio-tag societe" style="font-size:11px;">${eCiv || 'Société'}</span>`
+      : eCiv;
+    const nomCell = `<a href="#" onclick="event.preventDefault();openLocataireFiche('${eId}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">${eNom}</a>`
+      + (isSoc && l.siret ? `<div style="font-size:11px;color:var(--text-muted);font-weight:400;margin-top:2px;">SIRET ${eSiret}</div>` : '');
     let prenomCell;
     if (isSoc) {
       const rp = (l.representantPrenom || '').trim();
       const rn = (l.representantNom || '').trim();
       const rf = (l.representantFonction || '').trim();
       const reprNom = (rp + ' ' + rn).trim();
+      const eReprNom = escapeHtml(reprNom);
+      const eRf = escapeHtml(rf);
       if (reprNom || rf) {
         const reprLink = reprNom
-          ? `<a href="#" onclick="event.preventDefault();openLocataireFiche('${l.id}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;font-size:13px;">${reprNom}</a>`
+          ? `<a href="#" onclick="event.preventDefault();openLocataireFiche('${eId}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;font-size:13px;">${eReprNom}</a>`
           : `<span style="font-size:13px;color:var(--text-muted);">—</span>`;
         prenomCell = reprLink
-          + (rf ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${rf}</div>` : '');
+          + (rf ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${eRf}</div>` : '');
       } else {
-        prenomCell = `<a href="#" onclick="event.preventDefault();openLocataireFiche('${l.id}')" style="color:var(--text-muted);font-style:italic;font-size:12px;text-decoration:none;cursor:pointer;" title="Ouvrir la fiche pour ajouter un représentant">Pas de représentant</a>`;
+        prenomCell = `<a href="#" onclick="event.preventDefault();openLocataireFiche('${eId}')" style="color:var(--text-muted);font-style:italic;font-size:12px;text-decoration:none;cursor:pointer;" title="Ouvrir la fiche pour ajouter un représentant">Pas de représentant</a>`;
       }
     } else {
-      prenomCell = `<a href="#" onclick="event.preventDefault();openLocataireFiche('${l.id}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">${l.prenom || ''}</a>`;
+      prenomCell = `<a href="#" onclick="event.preventDefault();openLocataireFiche('${eId}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">${ePrenom}</a>`;
     }
     return `<tr>
-      <td>${l.id}</td><td>${civCell}</td>
+      <td>${eId}</td><td>${civCell}</td>
       <td>${nomCell}</td>
       <td>${prenomCell}</td>
-      <td>${l.adresse || ''}${(l.cp||l.ville)?', ':''}${l.cp || ''} ${l.ville || ''}</td><td>${l.tel || ''}</td><td>${l.email || ''}</td>
-      <td style="white-space:nowrap;"><button class="btn btn-sm" style="background:var(--accent);color:white;margin-right:4px;" onclick="openLocataireFiche('${l.id}')">Voir</button><button class="btn btn-danger btn-sm" onclick="deleteLocataire(${i})">Suppr.</button></td>
+      <td>${eAdresse}${(l.cp||l.ville)?', ':''}${eCp} ${eVille}</td><td>${eTel}</td><td>${eEmail}</td>
+      <td style="white-space:nowrap;"><button class="btn btn-sm" style="background:var(--accent);color:white;margin-right:4px;" onclick="openLocataireFiche('${eId}')">Voir</button><button class="btn btn-danger btn-sm" onclick="deleteLocataire(${i})">Suppr.</button></td>
     </tr>`;
   }).join('');
   // Adapter l'en-tête de la colonne "Prénom" pour refléter son double rôle
@@ -3039,6 +3081,36 @@ function initPaiementAnnee() {
   sel.innerHTML = years.map(y => `<option value="${y}" ${y===selectedYear?'selected':''}>${y}</option>`).join('');
 }
 
+// ─── Helpers utilitaires (#2, #17, #19, #24) ───
+// Échappe une chaîne pour insertion sûre dans innerHTML
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Nettoie une chaîne pour usage en nom de fichier (Windows-safe)
+function sanitizeFilename(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[/\\:*?"<>|\r\n]/g, '_').replace(/\s+/g, ' ').trim();
+}
+
+// Formate le nom d'affichage d'un locataire en gérant les sociétés (pas d'espace parasite)
+function getLocataireName(loc) {
+  if (!loc) return '';
+  const prenom = (loc.prenom || '').trim();
+  const nom = (loc.nom || '').trim();
+  if (prenom && nom) return prenom + ' ' + nom;
+  return prenom || nom || '';
+}
+
+// Retourne les trimestres (array de mois 1..12) d'un bail, selon sa config
+function getTrimestresBail(bail) {
+  const raw = (bail && bail.trimestres) || '1,4,7,10';
+  return raw.split(',').map(n => parseInt(n)).filter(n => n >= 1 && n <= 12);
+}
+
 // Périodicité du loyer : mensuelle ou trimestrielle.
 // Rétrocompat : si pas défini, on déduit de la périodicité des charges (comportement historique).
 function getPeriodiciteLoyer(bail) {
@@ -3069,7 +3141,7 @@ function getMontantsPeriode(bail, moisNum) {
   const periCharges = (bail && bail.periodiciteCharges) || 'mensuelle';
   const isLoyerTrim = periLoyer === 'trimestrielle';
   const isChargesTrim = periCharges === 'trimestrielle';
-  const trimMois = ((bail && bail.trimestres) || '1,4,7,10').split(',').map(Number);
+  const trimMois = getTrimestresBail(bail);
   const isTrimMonth = trimMois.includes(moisNum);
   const skip = isLoyerTrim && !isTrimMonth;
   const loyerAppele = isLoyerTrim ? (bail.loyer || 0) * 3 : (bail.loyer || 0);
@@ -3108,7 +3180,9 @@ function getMoisTotal(bail, mois) {
 }
 
 // Renvoie true si le bail est actif pendant le mois/année donné
-// (c.-à-d. que la date de début du bail est <= dernier jour du mois, et la date de fin >= premier jour du mois)
+// (c.-à-d. que la date de début du bail est <= dernier jour du mois, et la date de fin >= premier jour du mois).
+// #25 Note : si bail.fin est vide/null, le bail est consid\u00e9r\u00e9 comme "en cours sans \u00e9ch\u00e9ance" (toujours actif \u00e0 partir de debut).
+//          Une date invalide (NaN) est ignor\u00e9e (\u00e9quivaut \u00e0 "pas de contrainte").
 function isBailActifPourMois(bail, mois, annee) {
   if (!bail) return false;
   // Premier jour du mois et dernier jour du mois
@@ -3125,6 +3199,10 @@ function isBailActifPourMois(bail, mois, annee) {
   return true;
 }
 
+// #23 Note: cette fonction retourne 'impaye' par d\u00e9faut m\u00eame pour des mois
+//     qui n'ont JAMAIS \u00e9t\u00e9 appel\u00e9s (mois avant d\u00e9but bail, mois futurs).
+//     Les callers DOIVENT filtrer avec isBailActifPourMois() + checker que le mois
+//     est d\u00e9j\u00e0 \u00e9chu avant d'afficher un statut "impay\u00e9" \u00e0 l'utilisateur.
 function getPaiementStatut(bailId, mois, annee) {
   const p = data.paiements.find(x => x.bailId === bailId && x.mois === mois && x.annee === annee);
   return p ? p.statut : 'impaye';
@@ -3206,7 +3284,7 @@ function renderPaiements() {
   container.innerHTML = actifs.map(bail => {
     const loc = data.locataires.find(x => x.id === bail.locId);
     const bien = data.biens.find(x => x.id === bail.bienId);
-    const locNom = loc ? ((loc.prenom||'') + ' ' + (loc.nom||'')).trim() : bail.locId;
+    const locNom = loc ? getLocataireName(loc) : bail.locId;
     const bienNom = bien ? bien.designation : bail.bienId;
     const isTrim = bail.periodiciteCharges === 'trimestrielle';
     const trimMois = isTrim ? (bail.trimestres || '1,4,7,10').split(',').map(Number) : [];
@@ -3295,7 +3373,7 @@ function renderPaiements() {
           '<div style="flex:1;background:rgba(0,0,0,0.05);border-radius:6px;height:8px;overflow:hidden;">' +
             '<div style="height:100%;width:' + taux + '%;background:' + barColor + ';border-radius:6px;transition:width 0.4s;"></div>' +
           '</div>' +
-          '<span style="font-size:12px;font-weight:700;color:' + barColor + ';min-width:42px;text-align:right;">' + taux.toFixed(0) + '%</span>' +
+          '<span style="font-size:12px;font-weight:700;color:' + barColor + ';min-width:42px;text-align:right;">' + taux.toFixed(1) + '%</span>' +
         '</div>' +
         // Grille des mois
         '<div class="mois-grid" style="display:grid;grid-template-columns:repeat(12,1fr);gap:6px;">' + moisHtml + '</div>' +
@@ -3458,7 +3536,7 @@ function renderAlertes(actifs, cy, cm) {
   // 1) Impay\u00e9s > 30 jours
   actifs.forEach(b => {
     const loc = data.locataires.find(x => x.id === b.locId);
-    const locNom = loc ? ((loc.prenom||'') + ' ' + (loc.nom||'')).trim() : b.locId;
+    const locNom = loc ? getLocataireName(loc) : b.locId;
     for (let m = 1; m <= cm; m++) {
       if (!isBailActifPourMois(b, m, cy)) continue;
       if (getPaiementStatut(b.id, m, cy) !== 'paye') {
@@ -3483,7 +3561,7 @@ function renderAlertes(actifs, cy, cm) {
     const diff = Math.floor((finDate - today) / 86400000);
     if (diff >= 0 && diff <= 90) {
       const loc = data.locataires.find(x => x.id === b.locId);
-      const locNom = loc ? ((loc.prenom||'') + ' ' + (loc.nom||'')).trim() : b.locId;
+      const locNom = loc ? getLocataireName(loc) : b.locId;
       const bien = data.biens.find(x => x.id === b.bienId);
       alerts.push({
         type: 'warning',
@@ -3503,7 +3581,7 @@ function renderAlertes(actifs, cy, cm) {
     const diffAnniv = Math.floor((anniversaire - today) / 86400000);
     if (diffAnniv >= 0 && diffAnniv <= 30 && cy > debut.getFullYear()) {
       const loc = data.locataires.find(x => x.id === b.locId);
-      const locNom = loc ? ((loc.prenom||'') + ' ' + (loc.nom||'')).trim() : b.locId;
+      const locNom = loc ? getLocataireName(loc) : b.locId;
       alerts.push({
         type: 'info',
         icon: '\uD83D\uDCC8',
@@ -3583,10 +3661,69 @@ function showConfirm(message, onConfirm) {
 }
 function closeConfirm() { const el = document.getElementById('modal-confirm'); if (el) el.style.display = 'none'; }
 
-function deleteProprio(i) { showConfirm('\u00cates-vous s\u00fbr de vouloir supprimer ce propri\u00e9taire ?', () => { data.proprios.splice(i,1); saveData(); refreshAll(); }); }
-function deleteBien(i) { showConfirm('\u00cates-vous s\u00fbr de vouloir supprimer ce bien ?', () => { data.biens.splice(i,1); saveData(); refreshAll(); }); }
-function deleteLocataire(i) { showConfirm('\u00cates-vous s\u00fbr de vouloir supprimer ce locataire ?', () => { data.locataires.splice(i,1); saveData(); refreshAll(); }); }
-function deleteBail(i) { showConfirm('\u00cates-vous s\u00fbr de vouloir supprimer ce bail ?', () => { data.baux.splice(i,1); saveData(); refreshAll(); }); }
+// #3 Suppression avec vérification/cascade : empêche les baux orphelins
+function deleteProprio(i) {
+  const p = data.proprios[i]; if (!p) return;
+  const bauxLies = data.baux.filter(b => b.proprioId === p.id);
+  const biensLies = data.biens.filter(b => b.proprioId === p.id);
+  if (bauxLies.length || biensLies.length) {
+    alert('Ce propriétaire est lié à ' + biensLies.length + ' bien(s) et ' + bauxLies.length + ' bail/baux. Supprimez ou réassignez-les d\'abord.');
+    return;
+  }
+  showConfirm('Êtes-vous sûr de vouloir supprimer ce propriétaire ?', () => { data.proprios.splice(i,1); saveData(); refreshAll(); });
+}
+function deleteBien(i) {
+  const b = data.biens[i]; if (!b) return;
+  const bauxLies = data.baux.filter(x => x.bienId === b.id);
+  if (bauxLies.length) {
+    const bauxActifs = bauxLies.filter(x => x.statut === 'Actif');
+    if (bauxActifs.length) {
+      alert('Ce bien a ' + bauxActifs.length + ' bail/baux ACTIF(S). Résiliez ou supprimez ces baux avant de supprimer le bien.');
+      return;
+    }
+    showConfirm('Ce bien a ' + bauxLies.length + ' bail/baux historique(s). La suppression du bien supprimera aussi ces baux et leurs paiements. Continuer ?', () => {
+      const bailIds = bauxLies.map(x => x.id);
+      data.paiements = (data.paiements || []).filter(p => !bailIds.includes(p.bailId));
+      data.baux = data.baux.filter(x => x.bienId !== b.id);
+      data.biens.splice(i,1);
+      saveData(); refreshAll();
+    });
+    return;
+  }
+  showConfirm('Êtes-vous sûr de vouloir supprimer ce bien ?', () => { data.biens.splice(i,1); saveData(); refreshAll(); });
+}
+function deleteLocataire(i) {
+  const l = data.locataires[i]; if (!l) return;
+  const bauxLies = data.baux.filter(b => b.locId === l.id);
+  if (bauxLies.length) {
+    const bauxActifs = bauxLies.filter(b => b.statut === 'Actif');
+    if (bauxActifs.length) {
+      alert('Ce locataire a ' + bauxActifs.length + ' bail/baux ACTIF(S). Résiliez ou supprimez ces baux avant de supprimer le locataire.');
+      return;
+    }
+    showConfirm('Ce locataire a ' + bauxLies.length + ' bail/baux historique(s). La suppression supprimera aussi ces baux et leurs paiements. Continuer ?', () => {
+      const bailIds = bauxLies.map(x => x.id);
+      data.paiements = (data.paiements || []).filter(p => !bailIds.includes(p.bailId));
+      data.baux = data.baux.filter(b => b.locId !== l.id);
+      data.locataires.splice(i,1);
+      saveData(); refreshAll();
+    });
+    return;
+  }
+  showConfirm('Êtes-vous sûr de vouloir supprimer ce locataire ?', () => { data.locataires.splice(i,1); saveData(); refreshAll(); });
+}
+function deleteBail(i) {
+  const b = data.baux[i]; if (!b) return;
+  const paiementsLies = (data.paiements || []).filter(p => p.bailId === b.id);
+  const msg = paiementsLies.length
+    ? 'Ce bail a ' + paiementsLies.length + ' paiement(s) enregistré(s). La suppression les effacera aussi. Continuer ?'
+    : 'Êtes-vous sûr de vouloir supprimer ce bail ?';
+  showConfirm(msg, () => {
+    data.paiements = (data.paiements || []).filter(p => p.bailId !== b.id);
+    data.baux.splice(i,1);
+    saveData(); refreshAll();
+  });
+}
 
 // ── MODALS ──
 function openModal(type, editId) {
@@ -3789,6 +3926,9 @@ function getCoutTotalAcquisition(b) {
   return (b.prixAchat||0) + (b.fraisNotaire||0) + (b.fraisAgence||0) + (b.travaux||0) + (b.fraisBancaires||0) + (b.garantie||0) + (b.courtier||0) + (b.autresFrais||0);
 }
 
+// Charges ANNUELLES du BIEN (taxe foncière, copro, assurance PNO, gestion, entretien).
+// NB : les charges du bail (provisions locataire) sont comptées en RECETTES dans loyerAnTotal,
+//      elles n'apparaissent donc pas ici. Voir renderRendement() pour la cohérence.
 function getChargesAnnuelles(b) {
   return (b.taxeFonciere||0) + (b.copropriete||0) + (b.assurancePNO||0) + (b.gestionLocative||0) + (b.entretien||0);
 }
@@ -3804,6 +3944,8 @@ function getMensualiteTotaleCredit(b) {
 function calcEcheancesPayees(dateDebut) {
   if (!dateDebut) return 0;
   const start = new Date(dateDebut);
+  // #12 Guard date invalide : retourne 0 au lieu de NaN
+  if (isNaN(start.getTime())) return 0;
   const now = new Date();
   const months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
   return Math.max(0, months);
@@ -4140,6 +4282,19 @@ function saveBail() {
   const perioCharges = gv('m-ba-periocharges');
   const perioLoyer = gv('m-ba-perioloyer') || 'mensuelle';
   const chargesMontant = parseFloat(gv('m-ba-charges'))||0;
+  // #9 Bloquer doublon : m\u00eame bien + m\u00eame locataire + p\u00e9riodes qui se chevauchent
+  const locId = gv('m-ba-loc');
+  const newDebut = gv('m-ba-debut'), newFin = gv('m-ba-fin');
+  const overlap = data.baux.find(b => {
+    if (b.bienId !== bienId || b.locId !== locId) return false;
+    const aD = b.debut || '0000-01-01', aF = b.fin || '9999-12-31';
+    const nD = newDebut || '0000-01-01', nF = newFin || '9999-12-31';
+    return !(nF < aD || nD > aF);
+  });
+  if (overlap) {
+    alert('Un bail pour ce bien et ce locataire existe d\u00e9j\u00e0 (' + overlap.id + ') sur une p\u00e9riode qui se chevauche. V\u00e9rifiez les dates de d\u00e9but / fin.');
+    return;
+  }
   data.baux.push({
     id: nextId('BAIL-', data.baux), proprioId: proprioId,
     bienId: bienId, locId: gv('m-ba-loc'),
@@ -4462,8 +4617,9 @@ function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverri
   doc.setTextColor(255); doc.setFontSize(6); doc.setFont('helvetica','normal');
   doc.text('Document g\u00e9n\u00e9r\u00e9 automatiquement - Gestion Locative',w/2,h-4,{align:'center'});
 
-  if (returnBlob) return { blob: doc.output('blob'), filename: `Quittance_${bail.id}_${mois}_${annee}.pdf` };
-  doc.save(`Quittance_${bail.id}_${mois}_${annee}.pdf`);
+  const _qFilename = sanitizeFilename(`Quittance_${bail.id}_${mois}_${annee}`) + '.pdf';
+  if (returnBlob) return { blob: doc.output('blob'), filename: _qFilename };
+  doc.save(_qFilename);
 }
 
 function genAvisPDF(bail, P, periode, mois, annee, chargesMois, loyerOverride, periodeLabel, returnBlob) {
@@ -4569,8 +4725,9 @@ function genAvisPDF(bail, P, periode, mois, annee, chargesMois, loyerOverride, p
   doc.setTextColor(255); doc.setFontSize(6); doc.setFont('helvetica','normal');
   doc.text('Document g\u00e9n\u00e9r\u00e9 automatiquement - Gestion Locative',w/2,h-4,{align:'center'});
 
-  if (returnBlob) return { blob: doc.output('blob'), filename: `Avis_Echeance_${bail.id}_${mois}_${annee}.pdf` };
-  doc.save(`Avis_Echeance_${bail.id}_${mois}_${annee}.pdf`);
+  const _aFilename = sanitizeFilename(`Avis_Echeance_${bail.id}_${mois}_${annee}`) + '.pdf';
+  if (returnBlob) return { blob: doc.output('blob'), filename: _aFilename };
+  doc.save(_aFilename);
 }
 
 function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye, nextMoisNom, nextAnnee, nextMoisNum, aCharges, loyerAppele, periodeLabel, returnBlob) {
@@ -4639,7 +4796,16 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   doc.text(`Date d'\u00e9ch\u00e9ance du paiement : ${String(jour).padStart(2,'0')}/${String(moisNum).padStart(2,'0')}/${annee}`, w/2, y+6.5, {align:'center'});
   y+=14;
 
-  if (!prevPaye) {
+  // #6 Si le bail n'\u00e9tait pas encore actif au mois pr\u00e9c\u00e9dent, afficher une mention sp\u00e9cifique
+  //    (\u00e9vite de g\u00e9n\u00e9rer une quittance pour une p\u00e9riode pr\u00e9-bail)
+  const bailActifPrev = isBailActifPourMois(bail, moisNum, annee);
+  if (!bailActifPrev) {
+    doc.setFillColor(254,249,231); doc.rect(15,y,180,12,'F');
+    doc.setDrawColor(245,158,11); doc.rect(15,y,180,12,'S');
+    doc.setTextColor(180,100,0); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+    doc.text('Le bail n\'\u00e9tait pas encore actif sur cette p\u00e9riode. Aucune quittance n\'est due.',20,y+8);
+    y+=18;
+  } else if (!prevPaye) {
     // Message mois pr\u00e9c\u00e9dent non pay\u00e9
     doc.setFillColor(253,237,236); doc.rect(15,y,180,12,'F');
     doc.setDrawColor(231,76,60); doc.rect(15,y,180,12,'S');
@@ -4784,8 +4950,9 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   doc.setTextColor(255); doc.setFontSize(6); doc.setFont('helvetica','normal');
   doc.text('Document g\u00e9n\u00e9r\u00e9 automatiquement - Gestion Locative',w/2,h-4,{align:'center'});
 
-  if (returnBlob) return { blob: doc.output('blob'), filename: `Quittance_Avis_${bail.id}_${mois}_${annee}.pdf` };
-  doc.save(`Quittance_Avis_${bail.id}_${mois}_${annee}.pdf`);
+  const _cFilename = sanitizeFilename(`Quittance_Avis_${bail.id}_${mois}_${annee}`) + '.pdf';
+  if (returnBlob) return { blob: doc.output('blob'), filename: _cFilename };
+  doc.save(_cFilename);
 }
 
 // ── UTILS ──
@@ -4827,8 +4994,15 @@ function importJSON(e) {
   reader.onload = function(ev) {
     try {
       const imported = JSON.parse(ev.target.result);
-      if(imported.proprios) { data=imported; saveData(); loadData(); alert('Donn\u00e9es import\u00e9es !'); }
-      else { alert('Format non reconnu. Utilisez un fichier export\u00e9 depuis cette application.'); }
+      if(!imported.proprios) { alert('Format non reconnu. Utilisez un fichier export\u00e9 depuis cette application.'); return; }
+      // #14 Sauvegarde automatique des donn\u00e9es actuelles avant import
+      try {
+        const backupKey = 'gl_backup_' + new Date().toISOString().replace(/[:.]/g,'-') + '_' + (getStorageKey() || 'default');
+        localStorage.setItem(backupKey, JSON.stringify(data));
+      } catch(bk) { console.warn('Backup local non cr\u00e9\u00e9:', bk); }
+      if (!confirm('Vos donn\u00e9es actuelles seront remplac\u00e9es par celles du fichier.\n\nUne sauvegarde de vos donn\u00e9es actuelles a \u00e9t\u00e9 cr\u00e9\u00e9e en m\u00e9moire locale (gl_backup_*).\n\nContinuer ?')) return;
+      data = imported; saveData(); loadData();
+      alert('Donn\u00e9es import\u00e9es !');
     } catch(err) { alert('Erreur: fichier JSON invalide'); }
   };
   reader.readAsText(file);
@@ -4870,11 +5044,17 @@ function renderRendement() {
     const bail = data.baux.find(x=>x.bienId===b.id && x.statut==='Actif');
     const loc = bail ? data.locataires.find(x=>x.id===bail.locId) : null;
     const qp = (b.quotePart||100)/100;
+    // #1 Rendement trim : sommer sur les 12 mois pour gérer correctement
+    //     les baux à loyer mensuel/trim et charges mensuelles/trim (inclut charges bail)
     let loyerAnTotal = 0;
+    let chargesBailAn = 0;
     if (bail) {
-      loyerAnTotal = (bail.loyer||0)*12;
-      if (bail.periodiciteCharges==='trimestrielle') loyerAnTotal += (bail.chargesTrimestrielles||0)*4;
-      else loyerAnTotal += (bail.charges||0)*12;
+      for (let m = 1; m <= 12; m++) {
+        const mp = getMontantsPeriode(bail, m);
+        loyerAnTotal += mp.loyerAppele;
+        chargesBailAn += mp.chargesAppelees;
+      }
+      loyerAnTotal += chargesBailAn; // conserve la sémantique existante "loyer total = loyer + charges"
     }
     const loyerAn = loyerAnTotal * qp;
     const coutAcqTot = getCoutTotalAcquisition(b);
@@ -5857,10 +6037,13 @@ Cordialement,
 
 let emailQueue = [];
 
+// #10 Remplacement atomique : un seul passage pour \u00e9viter les injections crois\u00e9es
+//    (ex : si vars.nom = "{loyer}", l'ancien code substituait r\u00e9cursivement).
 function remplirTemplate(tpl, vars) {
-  let s = tpl;
-  Object.keys(vars).forEach(k => { s = s.split('{' + k + '}').join(vars[k]); });
-  return s;
+  if (!tpl) return '';
+  return String(tpl).replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => {
+    return Object.prototype.hasOwnProperty.call(vars, key) ? String(vars[key] == null ? '' : vars[key]) : match;
+  });
 }
 
 function ouvrirEnvoiEmail() {
@@ -6031,8 +6214,15 @@ function collectImpayes() {
     const loc = data.locataires.find(l => l.id === bail.locId);
     const bien = data.biens.find(x => x.id === bail.bienId);
     const proprio = data.proprios.find(p => p.id === bail.proprioId);
-    // Parcourir les mois des 2 dernières années pour couvrir les impayés anciens
-    for (let y = cy - 1; y <= cy; y++) {
+    // #5 Scanner depuis la date de début du bail (et non les 2 dernières années)
+    let yStart = cy;
+    if (bail.debut) {
+      const d = new Date(bail.debut);
+      if (!isNaN(d.getTime())) yStart = d.getFullYear();
+    }
+    // Plafond de sécurité : ne pas remonter avant 10 ans (évite les boucles folles sur baux mal datés)
+    yStart = Math.max(yStart, cy - 10);
+    for (let y = yStart; y <= cy; y++) {
       const maxMois = (y === cy) ? cm : 12;
       for (let m = 1; m <= maxMois; m++) {
         if (!isBailActifPourMois(bail, m, y)) continue;
@@ -6053,7 +6243,6 @@ function collectImpayes() {
       }
     }
   });
-  // Tri par retard décroissant (les plus anciens en premier)
   impayes.sort((a, b) => b.retardJours - a.retardJours);
   return impayes;
 }
@@ -6234,7 +6423,12 @@ function renderEmailPreview() {
   html += '<div style="font-size:13px;"><strong style="color:var(--warning);">\uD83E\uDDEA Mode test</strong>';
   html += '<div style="font-size:11px;color:var(--text-muted);margin-top:1px;">Redirige tous les emails vers votre adresse</div></div>';
   html += '</label>';
-  html += '<input type="email" id="email-test-address" value="' + (window._emailTestAddress || (data.proprios && data.proprios[0] ? data.proprios[0].email || '' : '')) + '" placeholder="votre@email.com" style="width:220px;padding:7px 12px;border:1px solid ' + (window._emailTestMode ? 'var(--warning)' : 'var(--border)') + ';border-radius:8px;font-size:12px;background:white;' + (window._emailTestMode ? '' : 'opacity:0.5;') + '">';
+  // #20 Priorit\u00e9 email de test : _emailTestAddress > currentUser.email > premier proprio avec email > vide
+  const _defaultTestEmail = window._emailTestAddress
+    || (currentUser && currentUser.email)
+    || (data.proprios && data.proprios.find(p => p && p.email) || {}).email
+    || '';
+  html += '<input type="email" id="email-test-address" value="' + escapeHtml(_defaultTestEmail) + '" placeholder="votre@email.com" style="width:220px;padding:7px 12px;border:1px solid ' + (window._emailTestMode ? 'var(--warning)' : 'var(--border)') + ';border-radius:8px;font-size:12px;background:white;' + (window._emailTestMode ? '' : 'opacity:0.5;') + '">';
   html += '</div>';
 
   html += '<div style="margin-bottom:16px;padding:12px 16px;background:rgba(108,92,231,0.06);border-radius:10px;border:1px solid rgba(108,92,231,0.12);font-size:13px;">';
@@ -6491,10 +6685,13 @@ async function envoyerTousEmails() {
   btn.disabled = true;
   btn.textContent = 'Envoi en cours...';
 
+  // #7 Marquer ceux d\u00e9j\u00e0 envoy\u00e9s pour \u00e9viter les doublons si re-clic apr\u00e8s erreur
   let success = 0, errors = 0;
   for (let i = 0; i < emailQueue.length; i++) {
+    if (emailQueue[i] && emailQueue[i]._sent) { continue; } // d\u00e9j\u00e0 envoy\u00e9 avec succ\u00e8s
     const ok = await envoyerUnEmail(i);
-    if (ok) success++; else errors++;
+    if (ok) { success++; if (emailQueue[i]) emailQueue[i]._sent = true; }
+    else errors++;
   }
 
   btn.textContent = success + ' envoy\u00e9(s)' + (errors ? ', ' + errors + ' erreur(s)' : '') + ' \u2713';
