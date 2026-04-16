@@ -1565,6 +1565,16 @@ function openBienFiche(bienId) {
   const capitalRestant = getCapitalRestant(bien);
   const hasBankTableau = bien.tableauBanque && bien.tableauBanque.length > 0;
   const crdBanque = hasBankTableau ? getCapitalRestantBanque(bien) : capitalRestant;
+  // Durée restante crédit
+  const totalEcheancesGlobal = bien.dureeCredit || (hasBankTableau ? bien.tableauBanque.length : 0);
+  const echeancesPayeesGlobal = bien.dateDebutCredit ? calcEcheancesPayees(bien.dateDebutCredit) : 0;
+  const restantesGlobal = Math.max(0, totalEcheancesGlobal - echeancesPayeesGlobal);
+  const anneesRestGlobal = Math.floor(restantesGlobal / 12);
+  const moisRestGlobal = restantesGlobal % 12;
+  let dureeRestStr = '';
+  if (anneesRestGlobal > 0) dureeRestStr += anneesRestGlobal + ' an' + (anneesRestGlobal > 1 ? 's' : '');
+  if (moisRestGlobal > 0) dureeRestStr += (anneesRestGlobal > 0 ? ' ' : '') + moisRestGlobal + ' mois';
+  if (!dureeRestStr) dureeRestStr = 'Terminé';
   // Use bank mensualité if available (manual fields may be empty when only bank data imported)
   let mensCreditEffective = mensCredit;
   if (hasBankTableau) {
@@ -1591,6 +1601,7 @@ function openBienFiche(bienId) {
   html += '<div style="background:var(--accent-glow);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Rend. net</div><div style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">' + rendNet.toFixed(2) + '%</div></div>';
   html += '<div style="background:' + (cashflow >= 0 ? 'var(--success-light)' : 'var(--danger-light)') + ';padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Cashflow / mois</div><div style="font-size:20px;font-weight:700;color:' + (cashflow >= 0 ? 'var(--success)' : 'var(--danger)') + ';margin-top:4px;">' + fmt(cashflow) + '</div></div>';
   html += '<div style="background:rgba(239,68,68,0.04);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Capital restant dû</div><div style="font-size:20px;font-weight:700;color:var(--danger);margin-top:4px;">' + fmt(crdBanque) + '</div></div>';
+  if (restantesGlobal > 0) { html += '<div style="background:rgba(239,68,68,0.04);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Durée restante</div><div style="font-size:20px;font-weight:700;color:var(--danger);margin-top:4px;">' + dureeRestStr + '</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px;">' + restantesGlobal + ' échéances</div></div>'; }
   html += '<div style="background:' + (valeurNette >= 0 ? 'rgba(16,185,129,0.06)' : 'var(--danger-light)') + ';padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Valeur nette</div><div style="font-size:20px;font-weight:700;color:' + (valeurNette >= 0 ? 'var(--success)' : 'var(--danger)') + ';margin-top:4px;">' + fmt(valeurNette) + '</div></div>';
   html += '</div>';
   // D\u00e9tail acquisition
@@ -4003,32 +4014,32 @@ function renderRendement() {
     html += '<div style="background:rgba(239,68,68,0.04);padding:16px;border-radius:12px;border:1px solid rgba(239,68,68,0.08);">';
     html += '<div style="font-size:12px;font-weight:700;color:var(--danger);text-transform:uppercase;margin-bottom:10px;">\uD83C\uDFE6 Cr\u00e9dit immobilier</div>';
     html += '<div style="display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:13px;">';
-    if (b.montantCredit) {
-      html += '<span style="color:var(--text-light);">Montant emprunt\u00e9</span><span style="text-align:right;">' + fmt(b.montantCredit * s.qp) + '</span>';
+    const _hasBankT = b.tableauBanque && b.tableauBanque.length > 0;
+    if (b.montantCredit || _hasBankT) {
+      const _montantOrig = b.montantCredit || (_hasBankT ? b.tableauBanque[0].r : 0);
+      const _totalEch = b.dureeCredit || (_hasBankT ? b.tableauBanque.length : 0);
+      html += '<span style="color:var(--text-light);">Montant emprunté</span><span style="text-align:right;">' + fmt(_montantOrig * s.qp) + '</span>';
       if (b.tauxCredit) html += '<span style="color:var(--text-light);">Taux annuel</span><span style="text-align:right;">' + b.tauxCredit.toFixed(2) + ' %</span>';
-      if (b.dureeCredit) html += '<span style="color:var(--text-light);">Dur\u00e9e</span><span style="text-align:right;">' + b.dureeCredit + ' mois (' + Math.round(b.dureeCredit/12) + ' ans)</span>';
+      html += '<span style="color:var(--text-light);">Durée</span><span style="text-align:right;">' + _totalEch + ' mois (' + Math.round(_totalEch/12) + ' ans)</span>';
       if (b.assuranceCredit) html += '<span style="color:var(--text-light);">Assurance / mois</span><span style="text-align:right;">' + fmt(b.assuranceCredit) + '</span>';
-      const mensTotale = getMensualiteTotaleCredit(b) * s.qp;
-      html += '<span style="font-weight:600;border-top:1px solid var(--border);padding-top:6px;margin-top:6px;">Mensualit\u00e9 totale</span><span style="text-align:right;font-weight:700;border-top:1px solid var(--border);padding-top:6px;margin-top:6px;">' + fmt(mensTotale) + '</span>';
-      if (s.interets > 0) html += '<span style="color:var(--text-light);">Int\u00e9r\u00eats totaux</span><span style="text-align:right;color:var(--danger);">' + fmt(s.interets) + '</span>';
-      // Capital restant dû
-      const crd = getCapitalRestant(b) * s.qp;
-      const echeances = b.dateDebutCredit ? calcEcheancesPayees(b.dateDebutCredit) : 0;
-      const pctRemb = b.dureeCredit > 0 ? Math.min(100, Math.round(echeances / b.dureeCredit * 100)) : 0;
-      const restantes = Math.max(0, (b.dureeCredit||0) - echeances);
-      html += '<span style="font-weight:600;border-top:1px solid var(--border);padding-top:6px;margin-top:6px;color:var(--accent);">Capital restant d\u00fb</span><span style="text-align:right;font-weight:700;font-size:15px;border-top:1px solid var(--border);padding-top:6px;margin-top:6px;color:var(--accent);">' + fmt(crd) + '</span>';
-      if (b.dateDebutCredit) {
-        html += '<span colspan="2" style="grid-column:1/-1;margin-top:4px;">';
-        html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:4px;"><span>' + echeances + '/' + b.dureeCredit + ' \u00e9ch\u00e9ances pay\u00e9es</span><span>' + pctRemb + '%</span></div>';
-        html += '<div style="height:6px;background:#E8E8EC;border-radius:4px;overflow:hidden;"><div style="height:100%;width:' + pctRemb + '%;background:linear-gradient(90deg,var(--success),var(--accent));border-radius:4px;"></div></div>';
-        html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">' + restantes + ' \u00e9ch\u00e9ance' + (restantes>1?'s':'') + ' restante' + (restantes>1?'s':'') + '</div>';
-        html += '</span>';
-      }
+      html += '<span style="font-weight:600;border-top:1px solid var(--border);padding-top:6px;margin-top:6px;">Mensualité totale</span><span style="text-align:right;font-weight:700;border-top:1px solid var(--border);padding-top:6px;margin-top:6px;">' + fmt(s.mensCredit) + '</span>';
+      if (s.interets > 0) html += '<span style="color:var(--text-light);">Intérêts totaux</span><span style="text-align:right;color:var(--danger);">' + fmt(s.interets) + '</span>';
+      // Capital restant dû (bank-aware)
+      const _crd = s.capitalRestant;
+      const _echeances = b.dateDebutCredit ? calcEcheancesPayees(b.dateDebutCredit) : 0;
+      const _pctRemb = _montantOrig > 0 ? Math.min(100, Math.round((1 - _crd / (_montantOrig * s.qp)) * 100)) : 0;
+      const _restantes = Math.max(0, _totalEch - _echeances);
+      html += '<span style="font-weight:600;border-top:1px solid var(--border);padding-top:6px;margin-top:6px;color:var(--accent);">Capital restant dû</span><span style="text-align:right;font-weight:700;font-size:15px;border-top:1px solid var(--border);padding-top:6px;margin-top:6px;color:var(--accent);">' + fmt(_crd) + '</span>';
+      html += '<span colspan="2" style="grid-column:1/-1;margin-top:4px;">';
+      html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:4px;"><span>' + _echeances + '/' + _totalEch + ' échéances payées</span><span>' + _pctRemb + '%</span></div>';
+      html += '<div style="height:6px;background:#E8E8EC;border-radius:4px;overflow:hidden;"><div style="height:100%;width:' + _pctRemb + '%;background:linear-gradient(90deg,var(--success),var(--accent));border-radius:4px;"></div></div>';
+      html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">' + _restantes + ' échéance' + (_restantes>1?'s':'') + ' restante' + (_restantes>1?'s':'') + '</div>';
+      html += '</span>';
       // Bouton tableau d'amortissement
-      html += '<span style="grid-column:1/-1;margin-top:8px;"><button onclick="toggleAmortissement(\'' + b.id + '\')" style="width:100%;padding:8px;border:1px solid rgba(108,92,231,0.2);border-radius:8px;background:rgba(108,92,231,0.04);color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;transition:all 0.15s;" onmouseover="this.style.background=\'rgba(108,92,231,0.1)\'" onmouseout="this.style.background=\'rgba(108,92,231,0.04)\'">Voir le tableau d\'amortissement</button></span>';
+      html += '<span style="grid-column:1/-1;margin-top:8px;"><button onclick="toggleAmortissement(\'' + b.id + '\')" style="width:100%;padding:8px;border:1px solid rgba(108,92,231,0.2);border-radius:8px;background:rgba(108,92,231,0.04);color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;transition:all 0.15s;" onmouseover="this.style.background=\'rgba(108,92,231,0.1)\'" onmouseout="this.style.background=\'rgba(108,92,231,0.04)\'">' + (_hasBankT ? '🏦 Voir tableau banque' : 'Tableau d\'amortissement') + '</button></span>';
       html += '<span style="grid-column:1/-1;"><div id="amort-' + b.id + '" style="display:none;"></div></span>';
     } else {
-      html += '<span style="color:var(--text-muted);">Pas de cr\u00e9dit</span><span></span>';
+      html += '<span style="color:var(--text-muted);">Pas de crédit</span><span></span>';
     }
     html += '</div></div>';
     html += '</div>';
