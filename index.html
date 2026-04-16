@@ -3826,7 +3826,7 @@ function renderRendement() {
   if (!biens.length) { container.innerHTML = '<div class="card"><div class="card-body" style="text-align:center;padding:40px;color:var(--text-muted);">Aucun bien.</div></div>'; return; }
 
   // ── Calculs globaux ──
-  let gCoutAcq=0, gValeur=0, gPrixAchat=0, gLoyerAn=0, gChargesAn=0, gCreditMens=0, gCashflow=0;
+  let gCoutAcq=0, gValeur=0, gPrixAchat=0, gLoyerAn=0, gChargesAn=0, gCreditMens=0, gCashflow=0, gCapitalRestant=0;
   const bienStats = biens.map(b => {
     const bail = data.baux.find(x=>x.bienId===b.id && x.statut==='Actif');
     const loc = bail ? data.locataires.find(x=>x.id===bail.locId) : null;
@@ -3869,7 +3869,7 @@ function renderRendement() {
     const rdtGlobal = coutAcq > 0 ? ((loyerNetAn + plusValue) / coutAcq * 100) : 0;
 
     gCoutAcq += coutAcq; gValeur += valActuelle; gPrixAchat += prixAchat;
-    gLoyerAn += loyerAn; gChargesAn += chargesAn; gCreditMens += mensCreditTotale; gCashflow += cashflow;
+    gLoyerAn += loyerAn; gChargesAn += chargesAn; gCreditMens += mensCreditTotale; gCashflow += cashflow; gCapitalRestant += capitalRestant;
 
     return { b, bail, loc, qp, loyerAn, coutAcq, chargesAn, mensCredit: mensCreditTotale, prixAchat, valActuelle, plusValue, plusValuePct, rdtBrut, rdtNet, rdtAcq, cashflow, rdtGlobal, totalCreditRemb, interets, capitalRestant, loyerAnTotal: loyerAnTotal };
   });
@@ -3895,8 +3895,9 @@ function renderRendement() {
 
   // Top KPIs
   html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:20px;">';
-  html += '<div><div style="font-size:11px;opacity:0.6;text-transform:uppercase;">Valeur totale actifs</div><div style="font-size:28px;font-weight:800;margin-top:4px;">' + fmt(gValeur) + '</div></div>';
-  html += '<div><div style="font-size:11px;opacity:0.6;text-transform:uppercase;">Co\u00fbt acquisition</div><div style="font-size:28px;font-weight:800;margin-top:4px;">' + fmt(gCoutAcq) + '</div></div>';
+  const gValeurNette = gValeur - gCapitalRestant;
+  html += '<div><div style="font-size:11px;opacity:0.6;text-transform:uppercase;">Valeur brute actifs</div><div style="font-size:28px;font-weight:800;margin-top:4px;">' + fmt(gValeur) + '</div></div>';
+  html += '<div><div style="font-size:11px;opacity:0.6;text-transform:uppercase;">Valeur nette actifs</div><div style="font-size:28px;font-weight:800;margin-top:4px;color:' + (gValeurNette>=0?'#6EE7B7':'#FCA5A5') + ';">' + fmt(gValeurNette) + '</div><div style="font-size:13px;opacity:0.7;margin-top:2px;">CRD total : ' + fmt(gCapitalRestant) + '</div></div>';
   html += '<div><div style="font-size:11px;opacity:0.6;text-transform:uppercase;">Plus-value latente</div><div style="font-size:28px;font-weight:800;margin-top:4px;color:' + (gPlusValue>=0?'#6EE7B7':'#FCA5A5') + ';">' + arrow(gPlusValue) + ' ' + fmt(gPlusValue) + '</div><div style="font-size:13px;opacity:0.7;margin-top:2px;">' + (gPlusPct>=0?'+':'') + gPlusPct.toFixed(1) + '%</div></div>';
   html += '<div><div style="font-size:11px;opacity:0.6;text-transform:uppercase;">Cashflow mensuel</div><div style="font-size:28px;font-weight:800;margin-top:4px;color:' + (gCashflow>=0?'#6EE7B7':'#FCA5A5') + ';">' + fmt(gCashflow) + '</div><div style="font-size:13px;opacity:0.7;margin-top:2px;">' + fmt(gCashflow*12) + ' / an</div></div>';
   html += '</div>';
