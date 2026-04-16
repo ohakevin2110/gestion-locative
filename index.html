@@ -617,7 +617,7 @@ input, select, textarea {
     </div>
   </div>
   <div class="sidebar-nav">
-    <div class="nav-item" data-page="monmois">
+    <div class="nav-item" data-page="monmois" style="display:none;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>
       Mon mois
     </div>
@@ -704,6 +704,9 @@ input, select, textarea {
 <!-- DASHBOARD -->
 <div class="page active" id="page-dashboard">
   <div class="kpi-grid" id="kpis"></div>
+
+  <!-- RÉSUMÉ DU MOIS -->
+  <div id="mois-resume" style="margin-bottom:16px;"></div>
 
   <!-- ALERTES -->
   <div id="alertes-container"></div>
@@ -1191,7 +1194,7 @@ function refreshAll() {
   // D\u00e9f\u00e9rer le dashboard+charts pour ne pas bloquer l'UI
   if (!_refreshScheduled) {
     _refreshScheduled = true;
-    requestAnimationFrame(() => { renderDashboard(); renderMonMois(); _refreshScheduled = false; });
+    requestAnimationFrame(() => { renderDashboard(); _refreshScheduled = false; });
   }
 }
 
@@ -1241,8 +1244,7 @@ function renderCmdKResults() {
   if (!q) {
     // Show quick nav shortcuts
     box.innerHTML = '<div class="cmdk-group-label">Navigation rapide</div>' +
-      [['monmois','&#x1F4C5;','Mon mois','Vue simplifi\u00e9e du mois en cours','#e3f2fd'],
-       ['dashboard','&#x1F3E0;','Tableau de bord','KPIs, graphiques, alertes','#f3e5f5'],
+      [['dashboard','&#x1F3E0;','Tableau de bord','KPIs, graphiques, alertes','#f3e5f5'],
        ['paiements','&#x1F4B3;','Paiements','Suivi des encaissements','#e8f5e9'],
        ['generer','&#x1F4C4;','Documents','G\u00e9n\u00e9rer quittances et avis','#fff3e0'],
        ['rendement','&#x1F4C8;','Rendement','Analyse de rentabilit\u00e9','#fce4ec']
@@ -2349,10 +2351,11 @@ function renderPaiements() {
   const cm = new Date().getMonth() + 1;
   const isCurrentYear = annee === new Date().getFullYear();
 
-  // Calcul global
+  // Calcul global (jusqu'au mois courant pour l'année en cours, toute l'année pour les années passées)
+  const maxMois = isCurrentYear ? cm : 12;
   let globalEnc = 0, globalDu = 0;
   actifs.forEach(b => {
-    for (let m = 1; m <= 12; m++) {
+    for (let m = 1; m <= maxMois; m++) {
       const mt = getMoisTotal(b, m);
       globalDu += mt;
       if (getPaiementStatut(b.id, m, annee) === 'paye') globalEnc += mt;
@@ -2513,6 +2516,76 @@ function renderDashboard() {
     `;
 
   const moisNoms = ['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+  // ── Résumé du mois en cours ──
+  let moisDu = 0, moisPaye = 0, moisImpayes = [];
+  actifs.forEach(b => {
+    const montant = getMoisTotal(b, cm);
+    moisDu += montant;
+    const paye = getPaiementStatut(b.id, cm, cy) === 'paye';
+    if (paye) { moisPaye += montant; }
+    else {
+      const loc = data.locataires.find(l => l.id === b.locId);
+      const bien = data.biens.find(x => x.id === b.bienId);
+      moisImpayes.push({ bail: b, loc, bien, montant });
+    }
+  });
+  const moisReste = moisDu - moisPaye;
+  const moisTaux = moisDu > 0 ? Math.round(moisPaye / moisDu * 100) : 0;
+  // Baux arrivant à échéance (90 jours)
+  const now = new Date();
+  const alertesBauxDash = [];
+  actifs.forEach(b => {
+    if (b.fin) {
+      const fin = new Date(b.fin);
+      const diff = Math.ceil((fin - now) / 86400000);
+      if (diff >= 0 && diff <= 90) {
+        const loc = data.locataires.find(l => l.id === b.locId);
+        const bien = data.biens.find(x => x.id === b.bienId);
+        alertesBauxDash.push({ bail: b, loc, bien, jours: diff });
+      }
+    }
+  });
+
+  let moisHtml = '<div class="card" style="border-left:4px solid var(--accent);">';
+  moisHtml += '<div class="card-header" style="background:rgba(108,92,231,0.04);"><h3>📅 ' + moisNoms[cm] + ' ' + cy + '</h3></div>';
+  moisHtml += '<div class="card-body">';
+  // KPIs mois
+  moisHtml += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px;">';
+  moisHtml += '<div style="padding:12px;border-radius:10px;background:var(--success-light);text-align:center;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Encaissé</div><div style="font-size:20px;font-weight:700;color:var(--success);margin-top:4px;">' + fmt(moisPaye) + '</div></div>';
+  moisHtml += '<div style="padding:12px;border-radius:10px;background:' + (moisReste > 0 ? 'var(--danger-light)' : 'var(--success-light)') + ';text-align:center;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Reste à encaisser</div><div style="font-size:20px;font-weight:700;color:' + (moisReste > 0 ? 'var(--danger)' : 'var(--success)') + ';margin-top:4px;">' + (moisReste > 0 ? fmt(moisReste) : '✓ Tout encaissé') + '</div></div>';
+  moisHtml += '<div style="padding:12px;border-radius:10px;background:rgba(108,92,231,0.04);text-align:center;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Total attendu</div><div style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">' + fmt(moisDu) + '</div></div>';
+  moisHtml += '<div style="padding:12px;border-radius:10px;background:rgba(108,92,231,0.04);text-align:center;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Taux encaissement</div><div style="font-size:20px;font-weight:700;color:' + (moisTaux === 100 ? 'var(--success)' : 'var(--accent)') + ';margin-top:4px;">' + moisTaux + '%</div><div style="margin-top:6px;height:4px;background:#E8E8EC;border-radius:4px;overflow:hidden;"><div style="height:100%;width:' + moisTaux + '%;background:' + (moisTaux === 100 ? 'var(--success)' : 'var(--accent)') + ';border-radius:4px;"></div></div></div>';
+  moisHtml += '</div>';
+  // Impayés du mois
+  if (moisImpayes.length) {
+    moisHtml += '<div style="font-size:12px;font-weight:700;color:var(--danger);text-transform:uppercase;margin-bottom:8px;">🚨 ' + moisImpayes.length + ' paiement' + (moisImpayes.length > 1 ? 's' : '') + ' en attente</div>';
+    moisImpayes.forEach(function(item) {
+      moisHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin-bottom:4px;border-radius:8px;background:rgba(239,68,68,0.03);border:1px solid rgba(239,68,68,0.08);cursor:pointer;" onclick="navigateTo(\'paiements\')">';
+      moisHtml += '<div><span style="font-weight:600;font-size:13px;">' + (item.loc ? ((item.loc.prenom||'') + ' ' + item.loc.nom).trim() : 'Locataire') + '</span> <span style="color:var(--text-muted);font-size:12px;">— ' + (item.bien ? item.bien.designation : '') + '</span></div>';
+      moisHtml += '<span style="font-weight:700;color:var(--danger);font-size:13px;">' + fmt(item.montant) + '</span>';
+      moisHtml += '</div>';
+    });
+  }
+  // Alertes baux
+  if (alertesBauxDash.length) {
+    moisHtml += '<div style="font-size:12px;font-weight:700;color:var(--warning);text-transform:uppercase;margin-top:12px;margin-bottom:8px;">⏰ Baux à échéance prochaine</div>';
+    alertesBauxDash.sort(function(a,b) { return a.jours - b.jours; }).forEach(function(item) {
+      var urgence = item.jours <= 30 ? 'var(--danger)' : item.jours <= 60 ? 'var(--warning)' : 'var(--accent)';
+      moisHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin-bottom:4px;border-radius:8px;background:rgba(245,158,11,0.03);border:1px solid rgba(245,158,11,0.08);">';
+      moisHtml += '<div><span style="font-weight:600;font-size:13px;">' + (item.loc ? ((item.loc.prenom||'') + ' ' + item.loc.nom).trim() : '') + '</span> <span style="color:var(--text-muted);font-size:12px;">— ' + (item.bien ? item.bien.designation : '') + '</span></div>';
+      moisHtml += '<span style="font-weight:700;color:' + urgence + ';font-size:12px;background:rgba(245,158,11,0.08);padding:3px 10px;border-radius:6px;">J-' + item.jours + '</span>';
+      moisHtml += '</div>';
+    });
+  }
+  // Actions rapides
+  moisHtml += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">';
+  moisHtml += '<button class="btn btn-primary btn-sm" onclick="navigateTo(\'generer\')">📄 Générer quittances ' + moisNoms[cm] + '</button>';
+  moisHtml += '<button class="btn btn-outline btn-sm" onclick="navigateTo(\'paiements\')">💰 Voir paiements</button>';
+  moisHtml += '</div>';
+  moisHtml += '</div></div>';
+  document.getElementById('mois-resume').innerHTML = moisHtml;
+
   const tb = document.querySelector('#table-impayes tbody');
   let impayeRows = [];
   actifs.forEach(b => {
