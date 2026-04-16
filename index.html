@@ -780,9 +780,6 @@ input, select, textarea {
 <div class="page active" id="page-dashboard">
   <div class="kpi-grid" id="kpis"></div>
 
-  <!-- RÉSUMÉ DU MOIS -->
-  <div id="mois-resume" style="margin-bottom:16px;"></div>
-
   <!-- ALERTES -->
   <div id="alertes-container"></div>
 
@@ -2803,7 +2800,8 @@ function ficheEnvoyerEmail(locId) {
       civilite: loc.civilite||'', prenom: loc.prenom||'', nom: loc.nom||'',
       email: loc.email, bien: bien ? bien.designation : bail.bienId,
       periode: periode, loyer: fmt(loyerAppele), charges: fmt(chargesAppelees),
-      total: fmt(loyerAppele + chargesAppelees), proprio_nom: P.nom || ''
+      total: fmt(loyerAppele + chargesAppelees), proprio_nom: P.nom || '',
+      date_echeance: getDateEcheance(bail, mois, annee)
     };
 
     emailQueue.push({
@@ -2983,6 +2981,18 @@ function initPaiementAnnee() {
 function getPeriodiciteLoyer(bail) {
   if (bail && bail.periodiciteLoyer) return bail.periodiciteLoyer;
   return (bail && bail.periodiciteCharges === 'trimestrielle') ? 'trimestrielle' : 'mensuelle';
+}
+
+// Formate la date d'échéance "15 avril 2026" à partir d'un bail, d'un nom de mois et d'une année.
+// Retourne une chaîne vide si le jour n'est pas défini.
+function getDateEcheance(bail, moisNom, annee) {
+  if (!bail || !bail.jourEcheance) return '';
+  const moisBas = {
+    'Janvier':'janvier','Février':'février','Mars':'mars','Avril':'avril',
+    'Mai':'mai','Juin':'juin','Juillet':'juillet','Août':'août',
+    'Septembre':'septembre','Octobre':'octobre','Novembre':'novembre','Décembre':'décembre'
+  };
+  return bail.jourEcheance + ' ' + (moisBas[moisNom] || moisNom.toLowerCase()) + ' ' + annee;
 }
 
 // Renvoie les montants à facturer pour un bail sur un mois donné (1..12)
@@ -3263,76 +3273,6 @@ function renderDashboard() {
     `;
 
   const moisNoms = ['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
-
-  // ── Résumé du mois en cours ──
-  let moisDu = 0, moisPaye = 0, moisImpayes = [];
-  actifs.forEach(b => {
-    if (!isBailActifPourMois(b, cm, cy)) return;
-    const montant = getMoisTotal(b, cm);
-    moisDu += montant;
-    const paye = getPaiementStatut(b.id, cm, cy) === 'paye';
-    if (paye) { moisPaye += montant; }
-    else {
-      const loc = data.locataires.find(l => l.id === b.locId);
-      const bien = data.biens.find(x => x.id === b.bienId);
-      moisImpayes.push({ bail: b, loc, bien, montant });
-    }
-  });
-  const moisReste = moisDu - moisPaye;
-  const moisTaux = moisDu > 0 ? Math.round(moisPaye / moisDu * 100) : 0;
-  // Baux arrivant à échéance (90 jours)
-  const now = new Date();
-  const alertesBauxDash = [];
-  actifs.forEach(b => {
-    if (b.fin) {
-      const fin = new Date(b.fin);
-      const diff = Math.ceil((fin - now) / 86400000);
-      if (diff >= 0 && diff <= 90) {
-        const loc = data.locataires.find(l => l.id === b.locId);
-        const bien = data.biens.find(x => x.id === b.bienId);
-        alertesBauxDash.push({ bail: b, loc, bien, jours: diff });
-      }
-    }
-  });
-
-  let moisHtml = '<div class="card" style="border-left:4px solid var(--accent);">';
-  moisHtml += '<div class="card-header" style="background:rgba(108,92,231,0.04);"><h3>📅 ' + moisNoms[cm] + ' ' + cy + '</h3></div>';
-  moisHtml += '<div class="card-body">';
-  // KPIs mois
-  moisHtml += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px;">';
-  moisHtml += '<div style="padding:12px;border-radius:10px;background:var(--success-light);text-align:center;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Encaissé</div><div style="font-size:20px;font-weight:700;color:var(--success);margin-top:4px;">' + fmt(moisPaye) + '</div></div>';
-  moisHtml += '<div style="padding:12px;border-radius:10px;background:' + (moisReste > 0 ? 'var(--danger-light)' : 'var(--success-light)') + ';text-align:center;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Reste à encaisser</div><div style="font-size:20px;font-weight:700;color:' + (moisReste > 0 ? 'var(--danger)' : 'var(--success)') + ';margin-top:4px;">' + (moisReste > 0 ? fmt(moisReste) : '✓ Tout encaissé') + '</div></div>';
-  moisHtml += '<div style="padding:12px;border-radius:10px;background:rgba(108,92,231,0.04);text-align:center;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Total attendu</div><div style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">' + fmt(moisDu) + '</div></div>';
-  moisHtml += '<div style="padding:12px;border-radius:10px;background:rgba(108,92,231,0.04);text-align:center;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Taux encaissement</div><div style="font-size:20px;font-weight:700;color:' + (moisTaux === 100 ? 'var(--success)' : 'var(--accent)') + ';margin-top:4px;">' + moisTaux + '%</div><div style="margin-top:6px;height:4px;background:#E8E8EC;border-radius:4px;overflow:hidden;"><div style="height:100%;width:' + moisTaux + '%;background:' + (moisTaux === 100 ? 'var(--success)' : 'var(--accent)') + ';border-radius:4px;"></div></div></div>';
-  moisHtml += '</div>';
-  // Impayés du mois
-  if (moisImpayes.length) {
-    moisHtml += '<div style="font-size:12px;font-weight:700;color:var(--danger);text-transform:uppercase;margin-bottom:8px;">🚨 ' + moisImpayes.length + ' paiement' + (moisImpayes.length > 1 ? 's' : '') + ' en attente</div>';
-    moisImpayes.forEach(function(item) {
-      moisHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin-bottom:4px;border-radius:8px;background:rgba(239,68,68,0.03);border:1px solid rgba(239,68,68,0.08);cursor:pointer;" onclick="navigateTo(\'paiements\')">';
-      moisHtml += '<div><span style="font-weight:600;font-size:13px;">' + (item.loc ? ((item.loc.prenom||'') + ' ' + item.loc.nom).trim() : 'Locataire') + '</span> <span style="color:var(--text-muted);font-size:12px;">— ' + (item.bien ? item.bien.designation : '') + '</span></div>';
-      moisHtml += '<span style="font-weight:700;color:var(--danger);font-size:13px;">' + fmt(item.montant) + '</span>';
-      moisHtml += '</div>';
-    });
-  }
-  // Alertes baux
-  if (alertesBauxDash.length) {
-    moisHtml += '<div style="font-size:12px;font-weight:700;color:var(--warning);text-transform:uppercase;margin-top:12px;margin-bottom:8px;">⏰ Baux à échéance prochaine</div>';
-    alertesBauxDash.sort(function(a,b) { return a.jours - b.jours; }).forEach(function(item) {
-      var urgence = item.jours <= 30 ? 'var(--danger)' : item.jours <= 60 ? 'var(--warning)' : 'var(--accent)';
-      moisHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin-bottom:4px;border-radius:8px;background:rgba(245,158,11,0.03);border:1px solid rgba(245,158,11,0.08);">';
-      moisHtml += '<div><span style="font-weight:600;font-size:13px;">' + (item.loc ? ((item.loc.prenom||'') + ' ' + item.loc.nom).trim() : '') + '</span> <span style="color:var(--text-muted);font-size:12px;">— ' + (item.bien ? item.bien.designation : '') + '</span></div>';
-      moisHtml += '<span style="font-weight:700;color:' + urgence + ';font-size:12px;background:rgba(245,158,11,0.08);padding:3px 10px;border-radius:6px;">J-' + item.jours + '</span>';
-      moisHtml += '</div>';
-    });
-  }
-  // Actions rapides
-  moisHtml += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">';
-  moisHtml += '<button class="btn btn-primary btn-sm" onclick="navigateTo(\'generer\')">📄 Générer quittances ' + moisNoms[cm] + '</button>';
-  moisHtml += '<button class="btn btn-outline btn-sm" onclick="navigateTo(\'paiements\')">💰 Voir paiements</button>';
-  moisHtml += '</div>';
-  moisHtml += '</div></div>';
-  document.getElementById('mois-resume').innerHTML = moisHtml;
 
   const tb = document.querySelector('#table-impayes tbody');
   let impayeRows = [];
@@ -4214,7 +4154,8 @@ function ficheBienEnvoyerEmail(bienId) {
       civilite: loc.civilite||'', prenom: loc.prenom||'', nom: loc.nom||'',
       email: loc.email, bien: bien ? bien.designation : bail.bienId,
       periode: periode, loyer: fmt(loyerAppele), charges: fmt(chargesAppelees),
-      total: fmt(loyerAppele + chargesAppelees), proprio_nom: P.nom || ''
+      total: fmt(loyerAppele + chargesAppelees), proprio_nom: P.nom || '',
+      date_echeance: getDateEcheance(bail, mois, annee)
     };
     emailQueue.push({
       bail, P, loc, bien, type, mois, annee, moisNum,
@@ -4340,6 +4281,8 @@ function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverri
   const bien = data.biens.find(x=>x.id===bail.bienId)||{};
   const loyer=loyerOverride!=null?loyerOverride:(bail.loyer||0), charges=chargesMois!=null?chargesMois:(bail.charges||0), total=loyer+charges;
   const locNom = `${loc.civilite||''} ${loc.prenom||''} ${loc.nom||''}`.trim();
+  const jour = bail.jourEcheance||1;
+  const moisNum = MOIS_NUM[mois]||1;
 
   // Header
   doc.setFillColor(44,62,80); doc.rect(0,0,w,28,'F');
@@ -4386,7 +4329,14 @@ function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverri
   doc.text(`Adresse : ${bien.adresse||''} - ${bien.cp||''} ${bien.ville||''}`,20,y+12);
   doc.text(`Bail n\u00b0 : ${bail.id}`,20,y+17);
 
-  y+=28;
+  y+=24;
+
+  // Date d'\u00e9ch\u00e9ance du paiement
+  doc.setFillColor(235,245,251); doc.rect(15,y,180,10,'F');
+  doc.setDrawColor(52,152,219); doc.rect(15,y,180,10,'S');
+  doc.setTextColor(52,152,219); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+  doc.text(`Date d'\u00e9ch\u00e9ance du paiement : ${String(jour).padStart(2,'0')}/${String(moisNum).padStart(2,'0')}/${annee}`, w/2, y+6.5, {align:'center'});
+  y+=14;
 
   doc.setFillColor(52,152,219); doc.rect(15,y,180,8,'F');
   doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(10);
@@ -4601,7 +4551,14 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   doc.text(`${bien.designation||''} (${bien.type||''})`,48,y+6);
   doc.text(`Adresse : ${bien.adresse||''} - ${bien.cp||''} ${bien.ville||''}`,20,y+12);
   doc.text(`Bail n\u00b0 : ${bail.id}`,20,y+17);
-  y+=28;
+  y+=24;
+
+  // Date d'\u00e9ch\u00e9ance du paiement (p\u00e9riode de la quittance)
+  doc.setFillColor(235,245,251); doc.rect(15,y,180,10,'F');
+  doc.setDrawColor(52,152,219); doc.rect(15,y,180,10,'S');
+  doc.setTextColor(52,152,219); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+  doc.text(`Date d'\u00e9ch\u00e9ance du paiement : ${String(jour).padStart(2,'0')}/${String(moisNum).padStart(2,'0')}/${annee}`, w/2, y+6.5, {align:'center'});
+  y+=14;
 
   if (!prevPaye) {
     // Message mois pr\u00e9c\u00e9dent non pay\u00e9
@@ -5731,26 +5688,23 @@ async function genererDocumentsDrive() {
 // ── EMAIL TEMPLATES ──
 const EMAIL_TEMPLATES = {
   quittance: {
-    sujet: 'Votre quittance de loyer \u2014 {periode} \u2014 {bien}',
+    sujet: 'Quittance de loyer \u2014 {periode} \u2014 {bien}',
     corps: `Bonjour {civilite} {prenom} {nom},
 
 J'esp\u00e8re que vous allez bien.
 
-Je vous remercie pour le r\u00e8glement de votre loyer pour la p\u00e9riode de {periode}. Vous trouverez ci-joint votre quittance, qui atteste de la bonne r\u00e9ception de votre paiement et vous servira de justificatif.
+Veuillez trouver ci-joint la quittance de loyer pour le mois de {periode}, attestant de la bonne r\u00e9ception de votre r\u00e8glement.
 
-R\u00e9capitulatif du r\u00e8glement :
-\u2022 Bien concern\u00e9 : {bien}
-\u2022 Loyer hors charges : {loyer}
-\u2022 Charges : {charges}
-\u2022 Total encaiss\u00e9 : {total}
+Pour rappel :
+- Montant du loyer : {loyer}
+- Charges : {charges}
+- Total r\u00e9gl\u00e9 : {total}
+- Date d'\u00e9ch\u00e9ance du paiement : {date_echeance}
 
-Je vous invite \u00e0 conserver ce document, il peut vous \u00eatre utile pour vos d\u00e9marches administratives (imp\u00f4ts, aides au logement, justificatif de domicile, etc.).
+Nous vous remercions pour votre r\u00e8glement dans les temps.
 
-N'h\u00e9sitez pas \u00e0 revenir vers moi si vous avez la moindre question, ou si un \u00e9l\u00e9ment n\u00e9cessite une correction.
-
-Je vous souhaite une excellente journ\u00e9e et vous remercie pour votre ponctualit\u00e9.
-
-Bien cordialement,
+Restant \u00e0 votre disposition pour toute question,
+Cordialement,
 {proprio_nom}`
   },
   avis: {
@@ -5759,21 +5713,18 @@ Bien cordialement,
 
 J'esp\u00e8re que vous allez bien.
 
-Vous trouverez ci-joint l'avis d'\u00e9ch\u00e9ance relatif \u00e0 votre loyer pour la p\u00e9riode de {periode}. Ce document r\u00e9capitule le montant \u00e0 r\u00e9gler ainsi que les modalit\u00e9s habituelles de paiement, afin que tout soit clair pour vous.
+Veuillez trouver ci-joint l'avis d'\u00e9ch\u00e9ance pour le mois de {periode}.
 
-D\u00e9tail du montant :
-\u2022 Bien concern\u00e9 : {bien}
-\u2022 Loyer hors charges : {loyer}
-\u2022 Charges : {charges}
-\u2022 Total \u00e0 r\u00e9gler : {total}
+Pour rappel :
+- Montant du loyer : {loyer}
+- Charges : {charges}
+- Total \u00e0 r\u00e9gler : {total}
+- Date d'\u00e9ch\u00e9ance : {date_echeance}
 
-Je vous remercie par avance de bien vouloir proc\u00e9der au r\u00e8glement selon les modalit\u00e9s habituelles. Si vous rencontrez la moindre difficult\u00e9 ou avez besoin d'un d\u00e9lai, n'h\u00e9sitez pas \u00e0 me le faire savoir : je reste \u00e0 votre \u00e9coute pour trouver ensemble une solution.
+Nous vous remercions de bien vouloir effectuer le r\u00e8glement avant cette date.
 
-Une quittance vous sera envoy\u00e9e d\u00e8s r\u00e9ception de votre paiement.
-
-Je reste disponible pour toute question.
-
-Bien cordialement,
+Restant \u00e0 votre disposition pour toute question,
+Cordialement,
 {proprio_nom}`
   },
   combine: {
@@ -5782,22 +5733,20 @@ Bien cordialement,
 
 J'esp\u00e8re que vous allez bien.
 
-Vous trouverez ci-joint deux documents concernant votre logement :
+Veuillez trouver ci-joint :
+- L'avis d'\u00e9ch\u00e9ance pour le mois de {periode}
+- La quittance de loyer du mois pr\u00e9c\u00e9dent (sous r\u00e9serve du r\u00e8glement complet du loyer)
 
-\u2022 La quittance de loyer pour la p\u00e9riode pr\u00e9c\u00e9dente, attestant de la bonne r\u00e9ception de votre paiement. Je vous remercie pour votre r\u00e8glement.
-\u2022 L'avis d'\u00e9ch\u00e9ance pour la p\u00e9riode de {periode}, qui r\u00e9capitule le montant \u00e0 r\u00e9gler pour la p\u00e9riode en cours.
+Pour rappel :
+- Montant du loyer : {loyer}
+- Charges : {charges}
+- Total \u00e0 r\u00e9gler : {total}
+- Date d'\u00e9ch\u00e9ance : {date_echeance}
 
-D\u00e9tail pour {periode} :
-\u2022 Bien concern\u00e9 : {bien}
-\u2022 Loyer hors charges : {loyer}
-\u2022 Charges : {charges}
-\u2022 Total \u00e0 r\u00e9gler : {total}
+Nous vous remercions de bien vouloir effectuer le r\u00e8glement avant cette date.
 
-Pensez \u00e0 conserver la quittance, elle peut vous servir de justificatif pour vos d\u00e9marches administratives. Pour le r\u00e8glement de la p\u00e9riode en cours, merci de bien vouloir proc\u00e9der selon les modalit\u00e9s habituelles. Si vous rencontrez une difficult\u00e9 ou avez besoin d'un d\u00e9lai, n'h\u00e9sitez pas \u00e0 me le faire savoir.
-
-Je reste \u00e0 votre disposition pour toute question ou pr\u00e9cision.
-
-Bien cordialement,
+Restant \u00e0 votre disposition pour toute question,
+Cordialement,
 {proprio_nom}`
   }
 };
@@ -5858,7 +5807,8 @@ function ouvrirEnvoiEmail() {
       loyer: fmt(loyerAppele),
       charges: fmt(chargesAppelees),
       total: fmt(loyerAppele + chargesAppelees),
-      proprio_nom: P.nom || ''
+      proprio_nom: P.nom || '',
+      date_echeance: getDateEcheance(bail, mois, annee)
     };
 
     emailQueue.push({
