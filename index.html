@@ -1684,20 +1684,25 @@ function openBienFiche(bienId) {
   // ── Synth\u00e8se financi\u00e8re : MA QUOTE-PART ──
   if (isCoOwner) {
     const cashflowQP = cashflow * qp;
+    const crdQP = crdBanque * qp;
+    const valeurNetteQP = valeurNette * qp;
     html += '<div class="card" style="border-left:4px solid var(--accent);"><div class="card-header" style="background:rgba(108,92,231,0.06);"><h3>\uD83D\uDC64 Ma quote-part — ' + (bien.quotePart) + '%</h3></div><div class="card-body">';
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;">';
-    html += '<div style="background:var(--accent-glow);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Co\u00fbt acquisition</div><div style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">' + fmt(coutAcq * qp) + '</div></div>';
+    html += '<div style="background:var(--accent-glow);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Coût acquisition</div><div style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">' + fmt(coutAcq * qp) + '</div></div>';
     html += '<div style="background:var(--success-light);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Loyer annuel</div><div style="font-size:20px;font-weight:700;color:var(--success);margin-top:4px;">' + fmt(loyerAnnuel * qp) + '</div></div>';
     html += '<div style="background:var(--accent-glow);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Rend. brut</div><div style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">' + rendBrut.toFixed(2) + '%</div></div>';
     html += '<div style="background:var(--accent-glow);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Rend. net</div><div style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">' + rendNet.toFixed(2) + '%</div></div>';
     html += '<div style="background:' + (cashflowQP >= 0 ? 'var(--success-light)' : 'var(--danger-light)') + ';padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Cashflow / mois</div><div style="font-size:20px;font-weight:700;color:' + (cashflowQP >= 0 ? 'var(--success)' : 'var(--danger)') + ';margin-top:4px;">' + fmt(cashflowQP) + '</div></div>';
+    html += '<div style="background:rgba(239,68,68,0.04);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Capital restant dû</div><div style="font-size:20px;font-weight:700;color:var(--danger);margin-top:4px;">' + fmt(crdQP) + '</div></div>';
+    if (restantesGlobal > 0) { html += '<div style="background:rgba(239,68,68,0.04);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Durée restante</div><div style="font-size:20px;font-weight:700;color:var(--danger);margin-top:4px;">' + dureeRestStr + '</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px;">' + restantesGlobal + ' échéances</div></div>'; }
+    html += '<div style="background:' + (valeurNetteQP >= 0 ? 'rgba(16,185,129,0.06)' : 'var(--danger-light)') + ';padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Valeur nette</div><div style="font-size:20px;font-weight:700;color:' + (valeurNetteQP >= 0 ? 'var(--success)' : 'var(--danger)') + ';margin-top:4px;">' + fmt(valeurNetteQP) + '</div></div>';
     html += '</div>';
-    // D\u00e9tail quote-part
+    // Détail quote-part
     html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;font-size:13px;max-width:500px;">';
     html += '<span style="color:var(--text-light);">Charges annuelles (ma part)</span><span style="text-align:right;">' + fmt(chargesAn * qp) + '</span>';
-    html += '<span style="color:var(--text-light);">Mensualit\u00e9 cr\u00e9dit (ma part)</span><span style="text-align:right;">' + fmt(mensCredit * qp) + '</span>';
+    html += '<span style="color:var(--text-light);">Mensualité crédit (ma part)</span><span style="text-align:right;">' + fmt(mensCreditEffective * qp) + '</span>';
     html += '<span style="color:var(--text-light);">Loyer mensuel (ma part)</span><span style="text-align:right;">' + fmt((loyerAnnuel / 12) * qp) + '</span>';
-    const netMensQP = ((loyerAnnuel / 12) - (chargesAn / 12) - mensCredit) * qp;
+    const netMensQP = ((loyerAnnuel / 12) - (chargesAn / 12) - mensCreditEffective) * qp;
     html += '<span style="color:var(--text);font-weight:700;border-top:1px solid var(--border);padding-top:4px;margin-top:4px;">Net mensuel</span><span style="text-align:right;font-weight:700;border-top:1px solid var(--border);padding-top:4px;margin-top:4px;color:' + (netMensQP >= 0 ? 'var(--success)' : 'var(--danger)') + ';">' + fmt(netMensQP) + '</span>';
     html += '</div>';
     html += '</div></div>';
