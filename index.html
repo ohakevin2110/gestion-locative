@@ -3967,7 +3967,13 @@ function renderRendement() {
     html += '</div></div>';
     // Droite : KPIs compacts
     html += '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">';
-    html += '<div style="text-align:center;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Valeur</div><div style="font-size:16px;font-weight:700;color:var(--primary);">' + fmt(s.valActuelle) + '</div></div>';
+    if (s.qp < 1) {
+      const valTotale = (b.valeurActuelle || b.prixAchat || 0);
+      html += '<div style="text-align:center;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Valeur totale</div><div style="font-size:16px;font-weight:700;color:var(--primary);">' + fmt(valTotale) + '</div></div>';
+      html += '<div style="text-align:center;"><div style="font-size:10px;color:var(--accent);text-transform:uppercase;">Ma part (' + b.quotePart + '%)</div><div style="font-size:16px;font-weight:700;color:var(--accent);">' + fmt(s.valActuelle) + '</div></div>';
+    } else {
+      html += '<div style="text-align:center;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Valeur</div><div style="font-size:16px;font-weight:700;color:var(--primary);">' + fmt(s.valActuelle) + '</div></div>';
+    }
     html += '<div style="width:1px;height:28px;background:var(--border);"></div>';
     html += '<div style="text-align:center;"><div style="font-size:10px;color:var(--success);text-transform:uppercase;">Rdt locatif</div><div style="font-size:16px;font-weight:700;color:' + rdtColor(s.rdtNet) + ';">' + s.rdtNet.toFixed(2) + '%</div></div>';
     html += '<div style="text-align:center;"><div style="font-size:10px;color:var(--accent);text-transform:uppercase;">Rdt acquis.</div><div style="font-size:16px;font-weight:700;color:' + pvColor(s.rdtAcq) + ';">' + (s.rdtAcq>=0?'+':'') + s.rdtAcq.toFixed(2) + '%</div></div>';
