@@ -3841,8 +3841,17 @@ function renderRendement() {
     const coutAcqTot = getCoutTotalAcquisition(b);
     const coutAcq = coutAcqTot * qp;
     const chargesAn = getChargesAnnuelles(b) * qp;
-    const mensCredit = getMensualiteCredit(b) * qp;
-    const mensCreditTotale = getMensualiteTotaleCredit(b) * qp;
+    let mensCredit = getMensualiteCredit(b);
+    let mensCreditTotale = getMensualiteTotaleCredit(b);
+    // Use bank data mensualité if available
+    if (b.tableauBanque && b.tableauBanque.length > 0) {
+      const _now = new Date();
+      const _nowStr = _now.getFullYear() + '-' + String(_now.getMonth()+1).padStart(2,'0');
+      const _row = b.tableauBanque.find(r => r.d && r.d.slice(0,7) >= _nowStr && r.e > 0);
+      if (_row) { mensCredit = _row.e; mensCreditTotale = _row.e + (b.assuranceCredit || 0); }
+    }
+    mensCredit *= qp;
+    mensCreditTotale *= qp;
     const prixAchat = (b.prixAchat||0) * qp;
     const valActuelle = (b.valeurActuelle || b.prixAchat || 0) * qp;
     const plusValue = valActuelle - prixAchat;
@@ -3852,7 +3861,7 @@ function renderRendement() {
     const cashflow = (loyerAn - chargesAn)/12 - mensCreditTotale;
     const totalCreditRemb = mensCredit > 0 ? getMensualiteCredit(b) * (b.dureeCredit||0) : 0;
     const interets = totalCreditRemb - (b.montantCredit||0) * qp;
-    const capitalRestant = getCapitalRestant(b) * qp;
+    const capitalRestant = ((b.tableauBanque && b.tableauBanque.length > 0) ? getCapitalRestantBanque(b) : getCapitalRestant(b)) * qp;
     // Rendement acquisition = plus-value / co\u00fbt acquisition
     const rdtAcq = coutAcq > 0 ? (plusValue / coutAcq * 100) : 0;
     // Rendement global = locatif net + acquisition
