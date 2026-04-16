@@ -5286,8 +5286,11 @@ function initGoogleAuth() {
     btnContainer,
     { theme: 'outline', size: 'large', width: btnWidth, text: 'signin_with', shape: 'pill', logo_alignment: 'center' }
   );
-  // Also try One Tap
-  google.accounts.id.prompt();
+  // One Tap : on n'affiche le pop-up QUE si aucun user n'a été restauré depuis le localStorage.
+  // Si l'user est déjà connecté, on laisse le silent token refresh faire son travail sans popup.
+  if (!currentUser) {
+    google.accounts.id.prompt();
+  }
 }
 
 function handleCredentialResponse(response) {
