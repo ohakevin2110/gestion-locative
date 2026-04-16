@@ -2214,6 +2214,14 @@ function ficheGenererPDF(locId) {
   const mois = gv('fiche-doc-mois');
   const annee = gv('fiche-doc-annee');
   const typeLabels = {quittance:'Quittance',avis:"Avis d'\u00e9ch\u00e9ance",combine:'Quittance + Avis'};
+  // Log activity for each active bail of this locataire
+  const _bauxLoc = data.baux.filter(b => b.locId === locId && b.statut === 'Actif');
+  _bauxLoc.forEach(bail => {
+    const _bien = data.biens.find(x=>x.id===bail.bienId);
+    const _loc = data.locataires.find(x=>x.id===locId);
+    logActivity({ type: 'document', proprioId: bail.proprioId, locataireId: locId, bailId: bail.id, bienId: bail.bienId, details: (typeLabels[type]||type) + ' ' + mois + ' ' + annee + ' généré(e)' + (_bien?' ('+_bien.designation+')':'') + (_loc?' - '+((_loc.prenom||'')+' '+_loc.nom).trim():'') });
+  });
+  saveData();
   document.getElementById('fiche-doc-result').innerHTML = '<div class="alert alert-success">' + (typeLabels[type]||type) + ' g\u00e9n\u00e9r\u00e9(e) pour ' + mois + ' ' + annee + ' !</div>';
 }
 
@@ -2247,8 +2255,11 @@ async function ficheArchiverDrive(locId) {
       const folderId = await gdriveEnsureFolderPath(folderPath);
       await gdriveUploadPDF(doc.blob, doc.filename, folderId);
       count++;
+      const _archLoc = data.locataires.find(x=>x.id===locId);
+      logActivity({ type: 'document', proprioId: doc.bail.proprioId, locataireId: locId, bailId: doc.bail.id, bienId: doc.bail.bienId, details: (gv('fiche-doc-type')==='quittance'?'Quittance':gv('fiche-doc-type')==='avis'?'Avis d\'échéance':'Quittance + Avis') + ' ' + gv('fiche-doc-mois') + ' ' + annee + ' archivé(e) sur Drive' + (bien?' ('+bien.designation+')':'') + (_archLoc?' - '+((_archLoc.prenom||'')+' '+_archLoc.nom).trim():'') });
     } catch(e) { console.error(e); errors++; }
   }
+  if (count > 0) saveData();
   let msg = '<div class="alert alert-success">' + count + ' document(s) archiv\u00e9(s) sur Google Drive !</div>';
   if (errors) msg += '<div class="alert" style="background:#f8d7da;border:1px solid #f5c6cb;padding:12px;border-radius:6px;">' + errors + ' erreur(s).</div>';
   resultEl.innerHTML = msg;
