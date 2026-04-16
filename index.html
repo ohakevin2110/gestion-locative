@@ -5731,54 +5731,73 @@ async function genererDocumentsDrive() {
 // ── EMAIL TEMPLATES ──
 const EMAIL_TEMPLATES = {
   quittance: {
-    sujet: 'Quittance de loyer - {periode} - {bien}',
+    sujet: 'Votre quittance de loyer \u2014 {periode} \u2014 {bien}',
     corps: `Bonjour {civilite} {prenom} {nom},
 
-Veuillez trouver ci-joint votre quittance de loyer pour la p\u00e9riode de {periode}.
+J'esp\u00e8re que vous allez bien.
 
-R\u00e9capitulatif :
-- Bien : {bien}
-- Loyer : {loyer}
-- Charges : {charges}
-- Total : {total}
+Je vous remercie pour le r\u00e8glement de votre loyer pour la p\u00e9riode de {periode}. Vous trouverez ci-joint votre quittance, qui atteste de la bonne r\u00e9ception de votre paiement et vous servira de justificatif.
 
-Nous vous remercions pour votre r\u00e8glement.
+R\u00e9capitulatif du r\u00e8glement :
+\u2022 Bien concern\u00e9 : {bien}
+\u2022 Loyer hors charges : {loyer}
+\u2022 Charges : {charges}
+\u2022 Total encaiss\u00e9 : {total}
 
-Cordialement,
+Je vous invite \u00e0 conserver ce document, il peut vous \u00eatre utile pour vos d\u00e9marches administratives (imp\u00f4ts, aides au logement, justificatif de domicile, etc.).
+
+N'h\u00e9sitez pas \u00e0 revenir vers moi si vous avez la moindre question, ou si un \u00e9l\u00e9ment n\u00e9cessite une correction.
+
+Je vous souhaite une excellente journ\u00e9e et vous remercie pour votre ponctualit\u00e9.
+
+Bien cordialement,
 {proprio_nom}`
   },
   avis: {
-    sujet: 'Avis d\'\u00e9ch\u00e9ance - {periode} - {bien}',
+    sujet: 'Avis d\'\u00e9ch\u00e9ance \u2014 {periode} \u2014 {bien}',
     corps: `Bonjour {civilite} {prenom} {nom},
 
-Veuillez trouver ci-joint votre avis d'\u00e9ch\u00e9ance pour la p\u00e9riode de {periode}.
+J'esp\u00e8re que vous allez bien.
 
-Montant \u00e0 r\u00e9gler :
-- Bien : {bien}
-- Loyer : {loyer}
-- Charges : {charges}
-- Total : {total}
+Vous trouverez ci-joint l'avis d'\u00e9ch\u00e9ance relatif \u00e0 votre loyer pour la p\u00e9riode de {periode}. Ce document r\u00e9capitule le montant \u00e0 r\u00e9gler ainsi que les modalit\u00e9s habituelles de paiement, afin que tout soit clair pour vous.
 
-Merci de proc\u00e9der au r\u00e8glement \u00e0 bonne date.
+D\u00e9tail du montant :
+\u2022 Bien concern\u00e9 : {bien}
+\u2022 Loyer hors charges : {loyer}
+\u2022 Charges : {charges}
+\u2022 Total \u00e0 r\u00e9gler : {total}
 
-Cordialement,
+Je vous remercie par avance de bien vouloir proc\u00e9der au r\u00e8glement selon les modalit\u00e9s habituelles. Si vous rencontrez la moindre difficult\u00e9 ou avez besoin d'un d\u00e9lai, n'h\u00e9sitez pas \u00e0 me le faire savoir : je reste \u00e0 votre \u00e9coute pour trouver ensemble une solution.
+
+Une quittance vous sera envoy\u00e9e d\u00e8s r\u00e9ception de votre paiement.
+
+Je reste disponible pour toute question.
+
+Bien cordialement,
 {proprio_nom}`
   },
   combine: {
-    sujet: 'Quittance & Avis d\'\u00e9ch\u00e9ance - {periode} - {bien}',
+    sujet: 'Quittance et avis d\'\u00e9ch\u00e9ance \u2014 {periode} \u2014 {bien}',
     corps: `Bonjour {civilite} {prenom} {nom},
 
-Veuillez trouver ci-joint :
-- La quittance de loyer pour la p\u00e9riode pr\u00e9c\u00e9dente
-- L'avis d'\u00e9ch\u00e9ance pour {periode}
+J'esp\u00e8re que vous allez bien.
+
+Vous trouverez ci-joint deux documents concernant votre logement :
+
+\u2022 La quittance de loyer pour la p\u00e9riode pr\u00e9c\u00e9dente, attestant de la bonne r\u00e9ception de votre paiement. Je vous remercie pour votre r\u00e8glement.
+\u2022 L'avis d'\u00e9ch\u00e9ance pour la p\u00e9riode de {periode}, qui r\u00e9capitule le montant \u00e0 r\u00e9gler pour la p\u00e9riode en cours.
 
 D\u00e9tail pour {periode} :
-- Bien : {bien}
-- Loyer : {loyer}
-- Charges : {charges}
-- Total : {total}
+\u2022 Bien concern\u00e9 : {bien}
+\u2022 Loyer hors charges : {loyer}
+\u2022 Charges : {charges}
+\u2022 Total \u00e0 r\u00e9gler : {total}
 
-Cordialement,
+Pensez \u00e0 conserver la quittance, elle peut vous servir de justificatif pour vos d\u00e9marches administratives. Pour le r\u00e8glement de la p\u00e9riode en cours, merci de bien vouloir proc\u00e9der selon les modalit\u00e9s habituelles. Si vous rencontrez une difficult\u00e9 ou avez besoin d'un d\u00e9lai, n'h\u00e9sitez pas \u00e0 me le faire savoir.
+
+Je reste \u00e0 votre disposition pour toute question ou pr\u00e9cision.
+
+Bien cordialement,
 {proprio_nom}`
   }
 };
