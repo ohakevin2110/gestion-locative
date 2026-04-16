@@ -720,6 +720,11 @@ input, select, textarea {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
       Paiements
     </div>
+    <div class="nav-item" data-page="impayes">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Impayés
+      <span class="badge" id="badge-impayes" style="background:var(--danger);">0</span>
+    </div>
     <div class="nav-item" data-page="rendement">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
       Rendement
@@ -882,6 +887,53 @@ input, select, textarea {
   <div id="paiements-cards"></div>
   <!-- table cachée pour compatibilité -->
   <table id="table-paiements" style="display:none;"><tbody></tbody></table>
+</div>
+
+<!-- IMPAYÉS -->
+<div class="page" id="page-impayes">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+    <div>
+      <h2 style="font-size:20px;font-weight:700;color:var(--primary);margin:0;">Gestion des impayés</h2>
+      <p style="font-size:12px;color:var(--text-muted);margin:4px 0 0;">Tous les loyers en attente de règlement — relancez et suivez en un clic</p>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <select id="impayes-filtre-relance" onchange="renderImpayes()" style="padding:8px 12px;border:1px solid var(--border);border-radius:10px;font-size:13px;background:white;">
+        <option value="all">Tous les impayés</option>
+        <option value="jamais">Jamais relancés</option>
+        <option value="recent">Relancés récemment (≤ 7 jours)</option>
+        <option value="ancien">À relancer à nouveau (> 7 jours)</option>
+      </select>
+      <button class="btn btn-primary btn-sm" id="impayes-relance-all" onclick="relancerTousImpayes()" style="display:none;">✉ Relancer tous les impayés non relancés</button>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpi-grid" id="impayes-kpis" style="margin-bottom:16px;"></div>
+
+  <!-- Liste détaillée -->
+  <div class="card">
+    <div class="card-header">
+      <h3 id="impayes-liste-titre">Liste des impayés</h3>
+    </div>
+    <div class="card-body" style="overflow-x:auto;padding:0;">
+      <table id="table-impayes-full" style="width:100%;">
+        <thead>
+          <tr>
+            <th>Locataire</th>
+            <th>Bien</th>
+            <th>Propriétaire</th>
+            <th>Période</th>
+            <th>Échéance</th>
+            <th>Retard</th>
+            <th class="money">Montant dû</th>
+            <th>Dernière relance</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="table-impayes-full-body"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <!-- RENDEMENT -->
@@ -1349,7 +1401,7 @@ function nextId(prefix, arr) {
 const PAGE_TITLES = {
   monmois: 'Mon mois', dashboard: 'Tableau de bord', proprios: 'Propri\u00e9taires', biens: 'Biens',
   locataires: 'Locataires', baux: 'Baux', paiements: 'Suivi Paiements',
-  rendement: 'Rendement', generer: 'G\u00e9n\u00e9rer Documents',
+  impayes: 'Impay\u00e9s', rendement: 'Rendement', generer: 'G\u00e9n\u00e9rer Documents',
   'bien-detail': 'Fiche Bien', 'locataire-detail': 'Fiche Locataire'
 };
 
@@ -1394,6 +1446,8 @@ function navigateTo(pageName, pushState) {
   if (pageName === 'dashboard') { renderDashboard(); }
   // Render historique des documents on demand
   if (pageName === 'generer') { renderHistoriqueDocs(); }
+  // Render impayés on demand
+  if (pageName === 'impayes') { renderImpayes(); }
   // Close mobile menu
   closeMobileMenu();
 }
@@ -1535,6 +1589,15 @@ function updateBadges() {
   document.getElementById('badge-biens').textContent = fb.length;
   document.getElementById('badge-locataires').textContent = fl.length;
   document.getElementById('badge-baux').textContent = fba.filter(b=>b.statut==='Actif').length;
+  // Badge impayés : compte dynamique
+  const impayesBadge = document.getElementById('badge-impayes');
+  if (impayesBadge) {
+    try {
+      const nb = (typeof collectImpayes === 'function') ? collectImpayes().length : 0;
+      impayesBadge.textContent = nb;
+      impayesBadge.style.display = nb > 0 ? '' : 'none';
+    } catch(e) { /* avant que collectImpayes soit défini */ }
+  }
 }
 
 // Refresh l\u00e9ger : tables + badges, sans charts
@@ -5953,6 +6016,209 @@ function getDerniereRelance(bailId, mois, annee) {
   const p = (data.paiements || []).find(x => x.bailId === bailId && x.mois === moisNum && x.annee === annee);
   if (!p || !p.relances || !p.relances.length) return null;
   return p.relances[p.relances.length - 1];
+}
+
+// ─── PAGE IMPAYÉS ───
+// Collecte tous les impayés (baux actifs, mois échus dans la période du bail, non payés)
+function collectImpayes() {
+  const now = new Date();
+  const cy = now.getFullYear();
+  const cm = now.getMonth() + 1;
+  const impayes = [];
+  const actifs = data.baux.filter(b => b.statut === 'Actif');
+  actifs.forEach(bail => {
+    if (filtreProprioId !== 'all' && bail.proprioId !== filtreProprioId) return;
+    const loc = data.locataires.find(l => l.id === bail.locId);
+    const bien = data.biens.find(x => x.id === bail.bienId);
+    const proprio = data.proprios.find(p => p.id === bail.proprioId);
+    // Parcourir les mois des 2 dernières années pour couvrir les impayés anciens
+    for (let y = cy - 1; y <= cy; y++) {
+      const maxMois = (y === cy) ? cm : 12;
+      for (let m = 1; m <= maxMois; m++) {
+        if (!isBailActifPourMois(bail, m, y)) continue;
+        if (getPaiementStatut(bail.id, m, y) === 'paye') continue;
+        const montant = getMoisTotal(bail, m);
+        if (montant <= 0) continue; // mois non pertinent (ex: loyer trim hors mois d'échéance)
+        const jourEch = bail.jourEcheance || 1;
+        const dateEch = new Date(y, m - 1, jourEch);
+        const retardJours = Math.max(0, Math.floor((now - dateEch) / 86400000));
+        const derniereRelance = getDerniereRelance(bail.id, m, y);
+        impayes.push({
+          bail, loc, bien, proprio,
+          mois: m, annee: y, montant,
+          dateEcheance: dateEch,
+          retardJours,
+          derniereRelance
+        });
+      }
+    }
+  });
+  // Tri par retard décroissant (les plus anciens en premier)
+  impayes.sort((a, b) => b.retardJours - a.retardJours);
+  return impayes;
+}
+
+function renderImpayes() {
+  const kpisEl = document.getElementById('impayes-kpis');
+  const tbody = document.getElementById('table-impayes-full-body');
+  const titreEl = document.getElementById('impayes-liste-titre');
+  const relanceAllBtn = document.getElementById('impayes-relance-all');
+  if (!tbody) return;
+
+  const all = collectImpayes();
+
+  // Application du filtre "statut relance"
+  const filtre = (document.getElementById('impayes-filtre-relance') || {}).value || 'all';
+  const now = Date.now();
+  const SEPT_JOURS_MS = 7 * 86400000;
+  const filtered = all.filter(item => {
+    if (filtre === 'all') return true;
+    if (filtre === 'jamais') return !item.derniereRelance;
+    if (filtre === 'recent') return item.derniereRelance && (now - new Date(item.derniereRelance.date).getTime()) <= SEPT_JOURS_MS;
+    if (filtre === 'ancien') return item.derniereRelance && (now - new Date(item.derniereRelance.date).getTime()) > SEPT_JOURS_MS;
+    return true;
+  });
+
+  // KPIs (toujours calculés sur 'all', pas sur le filtré)
+  const montantTotal = all.reduce((s, x) => s + x.montant, 0);
+  const nbPaiements = all.length;
+  const nbLocataires = new Set(all.map(x => x.bail.locId)).size;
+  const nbJamaisRelances = all.filter(x => !x.derniereRelance).length;
+  const retardMoyen = all.length ? Math.round(all.reduce((s,x)=>s+x.retardJours,0) / all.length) : 0;
+
+  kpisEl.innerHTML = `
+    <div class="kpi danger"><div class="label">Total dû</div><div class="value">${fmt(montantTotal)}</div></div>
+    <div class="kpi"><div class="label">Paiements impayés</div><div class="value">${nbPaiements}</div></div>
+    <div class="kpi"><div class="label">Locataires concernés</div><div class="value">${nbLocataires}</div></div>
+    <div class="kpi"><div class="label">Jamais relancés</div><div class="value">${nbJamaisRelances}</div></div>
+    <div class="kpi"><div class="label">Retard moyen</div><div class="value">${retardMoyen} j</div></div>
+  `;
+
+  // Bouton "Relancer tous" : visible uniquement s'il y a au moins 1 jamais relancé
+  if (relanceAllBtn) {
+    if (nbJamaisRelances > 0) {
+      relanceAllBtn.style.display = '';
+      relanceAllBtn.textContent = `✉ Relancer les ${nbJamaisRelances} jamais relancés`;
+    } else {
+      relanceAllBtn.style.display = 'none';
+    }
+  }
+
+  // Titre dynamique avec compteur
+  if (titreEl) {
+    titreEl.textContent = 'Liste des impayés' + (filtered.length !== all.length ? ` (${filtered.length} sur ${all.length})` : ` (${all.length})`);
+  }
+
+  // Tableau
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:32px 16px;color:var(--success);font-weight:600;">
+      ${all.length === 0 ? '🎉 Aucun impayé — tous les loyers sont à jour !' : 'Aucun impayé ne correspond au filtre sélectionné.'}
+    </td></tr>`;
+    return;
+  }
+
+  const moisNoms = ['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+  tbody.innerHTML = filtered.map(item => {
+    const { bail, loc, bien, proprio, mois, annee, montant, dateEcheance, retardJours, derniereRelance } = item;
+    const locNom = loc ? ((loc.prenom || '') + ' ' + (loc.nom || '')).trim() : bail.locId;
+    const bienNom = bien ? bien.designation : bail.bienId;
+    const proprioNom = proprio ? proprio.nom : '';
+    const dateEchStr = String(dateEcheance.getDate()).padStart(2,'0') + '/' + String(dateEcheance.getMonth()+1).padStart(2,'0') + '/' + dateEcheance.getFullYear();
+    // Couleur retard
+    const retardColor = retardJours >= 60 ? 'var(--danger)' : retardJours >= 30 ? 'var(--warning)' : 'var(--text-light)';
+    const retardBg = retardJours >= 60 ? 'rgba(239,68,68,0.12)' : retardJours >= 30 ? 'rgba(245,158,11,0.12)' : 'rgba(0,0,0,0.04)';
+    // Dernière relance
+    let relanceInfo;
+    if (derniereRelance) {
+      const relDate = new Date(derniereRelance.date);
+      const relDays = Math.floor((Date.now() - relDate.getTime()) / 86400000);
+      relanceInfo = `<div style="font-size:12px;color:var(--text);">${relDate.toLocaleDateString('fr-FR', {day:'2-digit',month:'short',year:'numeric'})}</div>
+        <div style="font-size:10px;color:var(--text-muted);">il y a ${relDays} j</div>`;
+    } else {
+      relanceInfo = '<span style="color:var(--text-muted);font-style:italic;font-size:12px;">Jamais</span>';
+    }
+    // Actions
+    const hasEmail = loc && loc.email;
+    const btnRelance = hasEmail
+      ? `<button class="btn btn-sm" onclick="envoyerRelance('${bail.id}',${mois},${annee})" style="background:var(--accent-glow);color:var(--accent);border:1px solid rgba(108,92,231,0.25);font-size:11px;padding:5px 10px;">✉ Relancer</button>`
+      : `<span style="font-size:11px;color:var(--text-muted);font-style:italic;" title="Aucune adresse email">Email ✗</span>`;
+    const btnPaye = `<button class="btn btn-sm" onclick="marquerPaye('${bail.id}',${mois},${annee})" title="Marquer ce loyer comme payé" style="background:rgba(0,179,126,0.1);color:var(--success);border:1px solid rgba(0,179,126,0.3);font-size:11px;padding:5px 10px;">✓ Payé</button>`;
+    const btnFiche = `<button class="btn btn-sm" onclick="openLocataireFiche('${bail.locId}')" title="Ouvrir la fiche locataire" style="background:#f5f5f5;color:var(--text-light);border:1px solid var(--border);font-size:11px;padding:5px 10px;">Fiche</button>`;
+
+    return `<tr>
+      <td><a href="#" onclick="event.preventDefault();openLocataireFiche('${bail.locId}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">${locNom}</a></td>
+      <td>${bienNom}</td>
+      <td>${proprioNom}</td>
+      <td style="white-space:nowrap;">${moisNoms[mois]} ${annee}</td>
+      <td style="white-space:nowrap;font-size:12px;color:var(--text-light);">${dateEchStr}</td>
+      <td><span style="background:${retardBg};color:${retardColor};font-weight:700;font-size:12px;padding:3px 10px;border-radius:6px;white-space:nowrap;">${retardJours} j</span></td>
+      <td class="money" style="color:var(--danger);font-weight:700;">${fmt(montant)}</td>
+      <td>${relanceInfo}</td>
+      <td style="white-space:nowrap;display:flex;gap:4px;flex-wrap:wrap;">${btnRelance}${btnPaye}${btnFiche}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Marque un paiement comme payé (depuis la page impayés)
+function marquerPaye(bailId, mois, annee) {
+  const moisNum = (typeof mois === 'number') ? mois : (MOIS_NUM[mois] || 0);
+  const idx = data.paiements.findIndex(x => x.bailId === bailId && x.mois === moisNum && x.annee === annee);
+  if (idx >= 0) {
+    data.paiements[idx].statut = 'paye';
+  } else {
+    data.paiements.push({ bailId, mois: moisNum, annee, statut: 'paye' });
+  }
+  const _bail = data.baux.find(x => x.id === bailId);
+  const _loc = _bail ? data.locataires.find(x => x.id === _bail.locId) : null;
+  const _bien = _bail ? data.biens.find(x => x.id === _bail.bienId) : null;
+  const moisNoms = ['','Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+  logActivity({ type: 'paiement', proprioId: _bail?.proprioId||'', locataireId: _bail?.locId||'', bailId, bienId: _bail?.bienId||'', details: 'Paiement ' + moisNoms[moisNum] + ' ' + annee + ' → Payé (depuis page Impayés)' + (_bien?' ('+_bien.designation+')':'') + (_loc?' - '+((_loc.prenom||'')+' '+_loc.nom).trim():'') });
+  saveData();
+  renderImpayes();
+  updateBadges();
+}
+
+// Envoie une relance pour tous les impayés jamais relancés (ayant un email)
+function relancerTousImpayes() {
+  const all = collectImpayes().filter(x => !x.derniereRelance && x.loc && x.loc.email);
+  if (!all.length) { alert('Aucun impayé à relancer.'); return; }
+  if (!confirm(`Vous êtes sur le point de préparer ${all.length} email(s) de relance. Vous pourrez les revoir avant envoi. Continuer ?`)) return;
+  if (!isTokenValid()) {
+    if (currentUser) { alert('Session Google expirée, reconnexion en cours.'); requestDriveToken(); return; }
+    alert('Session Google expirée. Cliquez sur Sync Drive en haut à droite pour vous reconnecter.');
+    return;
+  }
+  const moisNoms = ['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  const tpl = EMAIL_TEMPLATES.relance;
+  emailQueue = [];
+  all.forEach(item => {
+    const { bail, loc, bien, proprio, mois, annee } = item;
+    const moisNom = moisNoms[mois];
+    const periode = moisNom + ' ' + annee;
+    const mp = getMontantsPeriode(bail, mois);
+    const vars = {
+      civilite: loc.civilite || '', prenom: loc.prenom || '', nom: loc.nom || '',
+      email: loc.email, bien: bien ? bien.designation : bail.bienId,
+      periode, loyer: fmt(mp.loyerAppele), charges: fmt(mp.chargesAppelees),
+      total: fmt(mp.loyerAppele + mp.chargesAppelees),
+      proprio_nom: (proprio && proprio.nom) || '',
+      date_echeance: getDateEcheance(bail, moisNom, annee)
+    };
+    emailQueue.push({
+      bail, P: proprio || {}, loc, bien, type: 'relance',
+      mois: moisNom, annee, moisNum: mois,
+      loyerAppele: mp.loyerAppele, chargesAppelees: mp.chargesAppelees, periodeLabel: mp.periodeLabel,
+      to: loc.email,
+      sujet: remplirTemplate(tpl.sujet, vars),
+      corps: remplirTemplate(tpl.corps, vars),
+      vars,
+      bailId: bail.id, locId: loc.id
+    });
+  });
+  renderEmailPreview();
+  const emailModal = document.getElementById('modal-email');
+  if (emailModal) emailModal.style.display = 'flex';
 }
 
 function renderEmailPreview() {
