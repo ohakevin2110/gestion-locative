@@ -6461,6 +6461,9 @@ function getDerniereRelance(bailId, mois, annee) {
 
 // ─── PAGE IMPAYÉS ───
 // Collecte tous les impayés (baux actifs, mois échus dans la période du bail, non payés)
+// Ann\u00e9e de d\u00e9but du suivi des impay\u00e9s : rien avant ce millésime n'est consid\u00e9r\u00e9
+const IMPAYES_DEBUT_ANNEE = 2026;
+
 function collectImpayes() {
   const now = new Date();
   const cy = now.getFullYear();
@@ -6472,14 +6475,18 @@ function collectImpayes() {
     const loc = data.locataires.find(l => l.id === bail.locId);
     const bien = data.biens.find(x => x.id === bail.bienId);
     const proprio = data.proprios.find(p => p.id === bail.proprioId);
-    // #5 Scanner depuis la date de début du bail (et non les 2 dernières années)
+    // Scanner depuis la date de d\u00e9but du bail, avec plancher au d\u00e9but du suivi des impay\u00e9s (2026)
     let yStart = cy;
     if (bail.debut) {
       const d = new Date(bail.debut);
       if (!isNaN(d.getTime())) yStart = d.getFullYear();
     }
-    // Plafond de sécurité : ne pas remonter avant 10 ans (évite les boucles folles sur baux mal datés)
+    // Plafond de s\u00e9curit\u00e9 : ne pas remonter avant 10 ans
     yStart = Math.max(yStart, cy - 10);
+    // Plancher m\u00e9tier : ne comptabiliser qu'\u00e0 partir de IMPAYES_DEBUT_ANNEE
+    yStart = Math.max(yStart, IMPAYES_DEBUT_ANNEE);
+    // Si l'ann\u00e9e courante est ant\u00e9rieure au plancher, rien \u00e0 collecter
+    if (cy < IMPAYES_DEBUT_ANNEE) return;
     for (let y = yStart; y <= cy; y++) {
       const maxMois = (y === cy) ? cm : 12;
       for (let m = 1; m <= maxMois; m++) {
