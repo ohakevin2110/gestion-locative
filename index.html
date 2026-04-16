@@ -1704,10 +1704,18 @@ function openBienFiche(bienId) {
   }
   const loyerAnnuel = bauxActifs.reduce((s, b) => s + (b.loyer || 0) * 12, 0);
   const qp = (bien.quotePart || 100) / 100;
-  const rendBrut = coutAcq > 0 ? (loyerAnnuel / coutAcq * 100) : 0;
-  const rendNet = coutAcq > 0 ? ((loyerAnnuel - chargesAn) / coutAcq * 100) : 0;
+  // Rendement \u00e0 l'achat (sur co\u00fbt d'acquisition) = retour sur l'argent r\u00e9ellement inject\u00e9
+  const rendAchatBrut = coutAcq > 0 ? (loyerAnnuel / coutAcq * 100) : 0;
+  const rendAchatNet = coutAcq > 0 ? ((loyerAnnuel - chargesAn) / coutAcq * 100) : 0;
+  // Rendement locatif (sur valeur actuelle du bien) = rentabilit\u00e9 du bien au prix du march\u00e9 aujourd'hui
+  const valActuelleBien = bien.valeurActuelle || bien.prixAchat || 0;
+  const rendLocBrut = valActuelleBien > 0 ? (loyerAnnuel / valActuelleBien * 100) : 0;
+  const rendLocNet = valActuelleBien > 0 ? ((loyerAnnuel - chargesAn) / valActuelleBien * 100) : 0;
+  // Alias pour r\u00e9trocompat dans le reste du fichier
+  const rendBrut = rendAchatBrut;
+  const rendNet = rendAchatNet;
   const cashflow = (loyerAnnuel / 12) - (chargesAn / 12) - mensCreditEffective;
-  const valeurNette = (bien.valeurActuelle || bien.prixAchat || 0) - crdBanque;
+  const valeurNette = valActuelleBien - crdBanque;
 
   const isCoOwner = qp < 1;
 
@@ -1716,8 +1724,22 @@ function openBienFiche(bienId) {
   html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;">';
   html += '<div style="background:var(--accent-glow);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Co\u00fbt acquisition</div><div style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">' + fmt(coutAcq) + '</div></div>';
   html += '<div style="background:var(--success-light);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Loyer annuel</div><div style="font-size:20px;font-weight:700;color:var(--success);margin-top:4px;">' + fmt(loyerAnnuel) + '</div></div>';
-  html += '<div style="background:var(--accent-glow);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Rend. brut</div><div style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">' + rendBrut.toFixed(2) + '%</div></div>';
-  html += '<div style="background:var(--accent-glow);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Rend. net</div><div style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">' + rendNet.toFixed(2) + '%</div></div>';
+  // Rendement locatif (sur valeur actuelle)
+  html += '<div style="background:linear-gradient(135deg,rgba(20,184,166,0.08),rgba(20,184,166,0.04));padding:14px;border-radius:12px;text-align:center;border:1px solid rgba(20,184,166,0.15);" title="Rendement de l\'actif aujourd\'hui, sur sa valeur de march\u00e9 estim\u00e9e">';
+  html += '<div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">\uD83D\uDCCA Rend. locatif</div>';
+  html += '<div style="font-size:10px;color:var(--text-muted);margin-top:1px;">/ valeur actuelle</div>';
+  html += '<div style="display:flex;justify-content:space-around;gap:6px;margin-top:6px;">';
+  html += '<div><div style="font-size:9px;color:var(--text-muted);font-weight:600;text-transform:uppercase;">Brut</div><div style="font-size:16px;font-weight:700;color:#14B8A6;">' + rendLocBrut.toFixed(2) + '%</div></div>';
+  html += '<div><div style="font-size:9px;color:var(--text-muted);font-weight:600;text-transform:uppercase;">Net</div><div style="font-size:16px;font-weight:700;color:#14B8A6;">' + rendLocNet.toFixed(2) + '%</div></div>';
+  html += '</div></div>';
+  // Rendement \u00e0 l'achat (sur co\u00fbt d'acquisition)
+  html += '<div style="background:var(--accent-glow);padding:14px;border-radius:12px;text-align:center;border:1px solid rgba(108,92,231,0.15);" title="Retour sur l\'argent inject\u00e9 au d\u00e9part (prix + frais de notaire, agence, travaux\u2026)">';
+  html += '<div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">\uD83C\uDFE6 Rend. \u00e0 l\'achat</div>';
+  html += '<div style="font-size:10px;color:var(--text-muted);margin-top:1px;">/ co\u00fbt acquisition</div>';
+  html += '<div style="display:flex;justify-content:space-around;gap:6px;margin-top:6px;">';
+  html += '<div><div style="font-size:9px;color:var(--text-muted);font-weight:600;text-transform:uppercase;">Brut</div><div style="font-size:16px;font-weight:700;color:var(--accent);">' + rendAchatBrut.toFixed(2) + '%</div></div>';
+  html += '<div><div style="font-size:9px;color:var(--text-muted);font-weight:600;text-transform:uppercase;">Net</div><div style="font-size:16px;font-weight:700;color:var(--accent);">' + rendAchatNet.toFixed(2) + '%</div></div>';
+  html += '</div></div>';
   html += '<div style="background:' + (cashflow >= 0 ? 'var(--success-light)' : 'var(--danger-light)') + ';padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Cashflow / mois</div><div style="font-size:20px;font-weight:700;color:' + (cashflow >= 0 ? 'var(--success)' : 'var(--danger)') + ';margin-top:4px;">' + fmt(cashflow) + '</div></div>';
   html += '<div style="background:rgba(239,68,68,0.04);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Capital restant dû</div><div style="font-size:20px;font-weight:700;color:var(--danger);margin-top:4px;">' + fmt(crdBanque) + '</div></div>';
   if (restantesGlobal > 0) { html += '<div style="background:rgba(239,68,68,0.04);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Durée restante</div><div style="font-size:20px;font-weight:700;color:var(--danger);margin-top:4px;">' + dureeRestStr + '</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px;">' + restantesGlobal + ' échéances</div></div>'; }
@@ -1809,8 +1831,21 @@ function openBienFiche(bienId) {
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;">';
     html += '<div style="background:var(--accent-glow);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Coût acquisition</div><div style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">' + fmt(coutAcq * qp) + '</div></div>';
     html += '<div style="background:var(--success-light);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Loyer annuel</div><div style="font-size:20px;font-weight:700;color:var(--success);margin-top:4px;">' + fmt(loyerAnnuel * qp) + '</div></div>';
-    html += '<div style="background:var(--accent-glow);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Rend. brut</div><div style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">' + rendBrut.toFixed(2) + '%</div></div>';
-    html += '<div style="background:var(--accent-glow);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Rend. net</div><div style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">' + rendNet.toFixed(2) + '%</div></div>';
+    // Rendement locatif (sur valeur actuelle) \u2014 identique quote-part ou 100% car ratio
+    html += '<div style="background:linear-gradient(135deg,rgba(20,184,166,0.08),rgba(20,184,166,0.04));padding:14px;border-radius:12px;text-align:center;border:1px solid rgba(20,184,166,0.15);" title="Rendement de l\'actif aujourd\'hui, sur sa valeur de march\u00e9">';
+    html += '<div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">\uD83D\uDCCA Rend. locatif</div>';
+    html += '<div style="font-size:10px;color:var(--text-muted);margin-top:1px;">/ valeur actuelle</div>';
+    html += '<div style="display:flex;justify-content:space-around;gap:6px;margin-top:6px;">';
+    html += '<div><div style="font-size:9px;color:var(--text-muted);font-weight:600;text-transform:uppercase;">Brut</div><div style="font-size:16px;font-weight:700;color:#14B8A6;">' + rendLocBrut.toFixed(2) + '%</div></div>';
+    html += '<div><div style="font-size:9px;color:var(--text-muted);font-weight:600;text-transform:uppercase;">Net</div><div style="font-size:16px;font-weight:700;color:#14B8A6;">' + rendLocNet.toFixed(2) + '%</div></div>';
+    html += '</div></div>';
+    html += '<div style="background:var(--accent-glow);padding:14px;border-radius:12px;text-align:center;border:1px solid rgba(108,92,231,0.15);" title="Retour sur l\'argent inject\u00e9 au d\u00e9part">';
+    html += '<div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">\uD83C\uDFE6 Rend. \u00e0 l\'achat</div>';
+    html += '<div style="font-size:10px;color:var(--text-muted);margin-top:1px;">/ co\u00fbt acquisition</div>';
+    html += '<div style="display:flex;justify-content:space-around;gap:6px;margin-top:6px;">';
+    html += '<div><div style="font-size:9px;color:var(--text-muted);font-weight:600;text-transform:uppercase;">Brut</div><div style="font-size:16px;font-weight:700;color:var(--accent);">' + rendAchatBrut.toFixed(2) + '%</div></div>';
+    html += '<div><div style="font-size:9px;color:var(--text-muted);font-weight:600;text-transform:uppercase;">Net</div><div style="font-size:16px;font-weight:700;color:var(--accent);">' + rendAchatNet.toFixed(2) + '%</div></div>';
+    html += '</div></div>';
     html += '<div style="background:' + (cashflowQP >= 0 ? 'var(--success-light)' : 'var(--danger-light)') + ';padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Cashflow / mois</div><div style="font-size:20px;font-weight:700;color:' + (cashflowQP >= 0 ? 'var(--success)' : 'var(--danger)') + ';margin-top:4px;">' + fmt(cashflowQP) + '</div></div>';
     html += '<div style="background:rgba(239,68,68,0.04);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Capital restant dû</div><div style="font-size:20px;font-weight:700;color:var(--danger);margin-top:4px;">' + fmt(crdQP) + '</div></div>';
     if (restantesGlobal > 0) { html += '<div style="background:rgba(239,68,68,0.04);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Durée restante</div><div style="font-size:20px;font-weight:700;color:var(--danger);margin-top:4px;">' + dureeRestStr + '</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px;">' + restantesGlobal + ' échéances</div></div>'; }
@@ -1929,6 +1964,7 @@ function openBienFiche(bienId) {
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
     html += '<button class="btn btn-success btn-sm" onclick="genererDocumentsFiche(\'' + bienId + '\')">📥 Télécharger</button>';
     html += '<button class="btn btn-sm" onclick="genererDocumentsFicheDrive(\'' + bienId + '\')" style="background:#1A1A2E;color:white;">☁ Archiver sur Drive</button>';
+    html += '<button class="btn btn-sm" onclick="ficheBienEnvoyerEmail(\'' + bienId + '\')" style="background:#6C5CE7;color:white;">\u2709 Envoyer par email</button>';
     html += '</div>';
     html += '<div id="fiche-gen-result" style="margin-top:10px;"></div>';
     html += '</div></div>';
@@ -3782,6 +3818,62 @@ function genererDocumentsFiche(bienId) {
   document.getElementById('fiche-gen-result').innerHTML = '<div style="color:var(--success);font-size:13px;font-weight:600;">✓ Document généré</div>';
 }
 
+function ficheBienEnvoyerEmail(bienId) {
+  if (!isTokenValid()) {
+    if (currentUser) {
+      document.getElementById('fiche-gen-result').innerHTML = '<div class="alert" style="background:#e3f2fd;border:1px solid #90caf9;padding:12px;border-radius:6px;">Reconnexion Google en cours...</div>';
+      requestDriveToken();
+      return;
+    }
+    document.getElementById('fiche-gen-result').innerHTML = '<div class="alert" style="background:#fff3cd;border:1px solid #ffc107;padding:12px;border-radius:6px;">Session Google expir\u00e9e. Cliquez sur le bouton Sync Drive en haut \u00e0 droite.</div>';
+    return;
+  }
+  const type = gv('fiche-gen-type');
+  const mois = gv('fiche-gen-mois');
+  const annee = gv('fiche-gen-annee');
+  const bailSel = gv('fiche-gen-bail');
+  const periode = mois + ' ' + annee;
+  const moisNum = MOIS_NUM[mois] || 1;
+  const tpl = EMAIL_TEMPLATES[type] || EMAIL_TEMPLATES.quittance;
+  let baux = data.baux.filter(b => b.bienId === bienId && b.statut === 'Actif');
+  if (bailSel !== 'all') baux = baux.filter(b => b.id === bailSel);
+  emailQueue = [];
+  baux.forEach(bail => {
+    const loc = data.locataires.find(x => x.id === bail.locId);
+    if (!loc || !loc.email) return;
+    const P = data.proprios.find(x => x.id === bail.proprioId) || {};
+    const bien = data.biens.find(x => x.id === bail.bienId);
+    const isTrim = bail.periodiciteCharges === 'trimestrielle';
+    const trimMois = isTrim ? (bail.trimestres || '1,4,7,10').split(',').map(Number) : [];
+    if (isTrim && !trimMois.includes(moisNum)) return;
+    let loyerAppele, chargesAppelees, periodeLabel;
+    if (isTrim) { loyerAppele = (bail.loyer||0)*3; chargesAppelees = bail.chargesTrimestrielles||0; periodeLabel = 'trimestrielle'; }
+    else { loyerAppele = bail.loyer||0; chargesAppelees = bail.charges||0; periodeLabel = 'mensuelle'; }
+    const vars = {
+      civilite: loc.civilite||'', prenom: loc.prenom||'', nom: loc.nom||'',
+      email: loc.email, bien: bien ? bien.designation : bail.bienId,
+      periode: periode, loyer: fmt(loyerAppele), charges: fmt(chargesAppelees),
+      total: fmt(loyerAppele + chargesAppelees), proprio_nom: P.nom || ''
+    };
+    emailQueue.push({
+      bail, P, loc, bien, type, mois, annee, moisNum,
+      loyerAppele, chargesAppelees, periodeLabel,
+      to: loc.email,
+      sujet: remplirTemplate(tpl.sujet, vars),
+      corps: remplirTemplate(tpl.corps, vars),
+      vars,
+      bailId: bail.id, locId: loc.id
+    });
+  });
+  if (!emailQueue.length) {
+    document.getElementById('fiche-gen-result').innerHTML = '<div class="alert alert-info">Aucun locataire avec email pour ce bien ce mois-ci.</div>';
+    return;
+  }
+  renderEmailPreview();
+  const emailModal = document.getElementById('modal-email');
+  if (emailModal) emailModal.style.display = 'flex';
+}
+
 async function genererDocumentsFicheDrive(bienId) {
   const type = document.getElementById('fiche-gen-type').value;
   const mois = document.getElementById('fiche-gen-mois').value;
@@ -5461,6 +5553,13 @@ function renderEmailPreview() {
   if (window._emailTestMode) html += '<br><span style="color:var(--warning);font-weight:600;">\u26A0 Mode test actif \u2014 les emails seront envoy\u00e9s \u00e0 votre adresse, pas aux locataires.</span>';
   html += '</div>';
 
+  // ── Champ CC global (s\'applique \u00e0 tous les emails) ──
+  html += '<div style="margin-bottom:16px;padding:12px 14px;background:#F7F7F8;border-radius:10px;border:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">';
+  html += '<label for="email-cc-global" style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.3px;min-width:70px;">\uD83D\uDCE7 CC</label>';
+  html += '<input type="text" id="email-cc-global" value="' + (window._emailCcGlobal || '').replace(/"/g,'&quot;') + '" onchange="window._emailCcGlobal=this.value.trim()" placeholder="email1@exemple.com, email2@exemple.com" style="flex:1;min-width:220px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:white;">';
+  html += '<span style="font-size:11px;color:var(--text-muted);">S\'applique \u00e0 tous les emails. S\u00e9parez plusieurs adresses par une virgule.</span>';
+  html += '</div>';
+
   emailQueue.forEach((eq, idx) => {
     const locNom = ((eq.loc.prenom||'') + ' ' + (eq.loc.nom||'')).trim();
     const bienEmj = bienEmoji(eq.bien ? eq.bien.type : '');
@@ -5583,15 +5682,18 @@ function wrapBase64(b64, lineLen) {
   return lines.join('\r\n');
 }
 
-function buildMimeMessage(to, subject, bodyText, pdfBase64, pdfFilename) {
+function buildMimeMessage(to, subject, bodyText, pdfBase64, pdfFilename, cc) {
   const boundary = 'boundary_' + Date.now();
   const bodyB64 = wrapBase64(btoa(unescape(encodeURIComponent(bodyText))));
   const pdfB64Wrapped = wrapBase64(pdfBase64);
-  const lines = [
+  const headers = [
     'MIME-Version: 1.0',
-    'To: ' + to,
-    'Subject: =?UTF-8?B?' + btoa(unescape(encodeURIComponent(subject))) + '?=',
-    'Content-Type: multipart/mixed; boundary="' + boundary + '"',
+    'To: ' + to
+  ];
+  if (cc && cc.trim()) headers.push('Cc: ' + cc.trim());
+  headers.push('Subject: =?UTF-8?B?' + btoa(unescape(encodeURIComponent(subject))) + '?=');
+  headers.push('Content-Type: multipart/mixed; boundary="' + boundary + '"');
+  const lines = headers.concat([
     '',
     '--' + boundary,
     'Content-Type: text/plain; charset="UTF-8"',
@@ -5607,7 +5709,7 @@ function buildMimeMessage(to, subject, bodyText, pdfBase64, pdfFilename) {
     pdfB64Wrapped,
     '',
     '--' + boundary + '--'
-  ];
+  ]);
   return lines.join('\r\n');
 }
 
@@ -5641,7 +5743,10 @@ async function envoyerUnEmail(idx) {
 
     statusEl.textContent = 'Envoi...';
     const pdfBase64 = await blobToBase64(pdfResult.blob);
-    const mime = buildMimeMessage(to, sujet, corps, pdfBase64, pdfResult.filename);
+    // Lecture du CC global saisi dans la preview
+    const ccInput = document.getElementById('email-cc-global');
+    const ccVal = ccInput ? ccInput.value.trim() : (window._emailCcGlobal || '');
+    const mime = buildMimeMessage(to, sujet, corps, pdfBase64, pdfResult.filename, ccVal);
 
     // Encode MIME to base64url for Gmail API
     const utf8Bytes = new TextEncoder().encode(mime);
