@@ -1342,6 +1342,8 @@ function loadData() {
   if (!data.historique) { data.historique = []; migrated = true; }
   if (migrated) saveData();
   refreshAll();
+  // Restaurer la fiche (bien/locataire) depuis le hash si le refresh a été fait dessus
+  try { if (typeof restorePendingHashRoute === 'function') restorePendingHashRoute(); } catch(e) {}
 }
 function gv(id) { return document.getElementById(id)?.value || ''; }
 function fmt(n) {
@@ -1409,24 +1411,89 @@ function navigateTo(pageName, pushState) {
   closeMobileMenu();
 }
 
-window.addEventListener('popstate', (e) => {
-  if (e.state && e.state.page) {
-    navigateTo(e.state.page, false);
-  } else {
-    const hash = location.hash.replace('#', '') || 'dashboard';
-    navigateTo(hash, false);
+// ── Routing: helper pour parser le hash et restaurer la bonne page ──
+// Gère les hashes du type "#dashboard" (top-level) ou "#bien-detail/B001" (sous-page avec id)
+function parseHashRoute(hash) {
+  const clean = (hash || '').replace('#', '');
+  if (!clean) return { page: 'dashboard', id: null };
+  const [page, id] = clean.split('/');
+  return { page, id: id || null };
+}
+
+function navigateFromRoute(route, pushStateFlag) {
+  const { page, id } = route;
+  // Sous-page bien-detail
+  if (page === 'bien-detail') {
+    if (id && data && data.biens && data.biens.find(b => b.id === id)) {
+      openBienFiche(id, pushStateFlag);
+      return true;
+    }
+    // bien introuvable ou id manquant → liste des biens
+    navigateTo('biens', pushStateFlag);
+    return false;
   }
+  // Sous-page locataire-detail
+  if (page === 'locataire-detail') {
+    if (id && data && data.locataires && data.locataires.find(l => l.id === id)) {
+      openLocataireFiche(id, pushStateFlag);
+      return true;
+    }
+    navigateTo('locataires', pushStateFlag);
+    return false;
+  }
+  // Page top-level classique
+  if (document.getElementById('page-' + page)) {
+    navigateTo(page, pushStateFlag);
+    return true;
+  }
+  // Hash invalide → dashboard
+  navigateTo('dashboard', pushStateFlag);
+  return false;
+}
+
+window.addEventListener('popstate', (e) => {
+  const route = (e.state && e.state.page)
+    ? { page: e.state.page, id: e.state.id || null }
+    : parseHashRoute(location.hash);
+  navigateFromRoute(route, false);
 });
 
 // Init from hash on load
+// - Pour les pages top-level (statiques en DOM), on navigue immédiatement
+// - Pour les sous-pages (fiche bien/locataire) on diffère jusqu'à loadData()
+//   car data.biens/locataires n'est pas encore chargé au parse du script
+let _pendingHashRoute = null;
 if (location.hash) {
-  const initPage = location.hash.replace('#', '');
-  if (document.getElementById('page-' + initPage)) {
-    navigateTo(initPage, false);
-    history.replaceState({ page: initPage }, '', '#' + initPage);
+  const _route = parseHashRoute(location.hash);
+  const _isSubPage = (_route.page === 'bien-detail' || _route.page === 'locataire-detail');
+  if (_isSubPage) {
+    // Toujours différer (même sans id) pour pouvoir fallback proprement vers la liste après loadData
+    _pendingHashRoute = _route;
+  } else if (document.getElementById('page-' + _route.page)) {
+    navigateTo(_route.page, false);
+    history.replaceState({ page: _route.page }, '', '#' + _route.page);
+  } else {
+    history.replaceState({ page: 'dashboard' }, '', '#dashboard');
   }
 } else {
   history.replaceState({ page: 'dashboard' }, '', '#dashboard');
+}
+
+// Appelé après loadData() pour restaurer une fiche (bien/locataire) depuis le hash
+function restorePendingHashRoute() {
+  if (!_pendingHashRoute) return;
+  const route = _pendingHashRoute;
+  _pendingHashRoute = null;
+  const ok = navigateFromRoute(route, false);
+  if (ok) {
+    // Normaliser l'URL + remplacer l'état (pas de pushState parasite)
+    history.replaceState({ page: route.page, id: route.id }, '',
+      '#' + route.page + (route.id ? '/' + route.id : ''));
+  } else {
+    // Fallback (bien/locataire disparu) : synchroniser le hash avec la page réellement affichée
+    const fbPage = route.page === 'bien-detail' ? 'biens' : 'locataires';
+    history.replaceState({ page: fbPage }, '', '#' + fbPage);
+  }
 }
 
 // ── SIDEBAR NAV ──
@@ -1829,14 +1896,16 @@ function backFromFicheBien() {
   history.back();
 }
 
-function openBienFiche(bienId) {
+function openBienFiche(bienId, pushStateFlag) {
   const bien = data.biens.find(x => x.id === bienId);
   if (!bien) return;
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('page-bien-detail').classList.add('active');
-  history.pushState({ page: 'bien-detail' }, '', '#bien-detail');
+  if (pushStateFlag !== false) {
+    history.pushState({ page: 'bien-detail', id: bienId }, '', '#bien-detail/' + bienId);
+  }
 
   const proprio = data.proprios.find(x => x.id === bien.proprioId);
   const baux = data.baux.filter(b => b.bienId === bienId);
@@ -2310,7 +2379,7 @@ function togglePaiementFiche(bailId, mois, annee, locId) {
   openLocataireFiche(locId); // refresh fiche only
 }
 
-function openLocataireFiche(locId) {
+function openLocataireFiche(locId, pushStateFlag) {
   const loc = data.locataires.find(x => x.id === locId);
   if (!loc) return;
 
@@ -2318,7 +2387,9 @@ function openLocataireFiche(locId) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  history.pushState({ page: 'locataire-detail' }, '', '#locataire-detail');
+  if (pushStateFlag !== false) {
+    history.pushState({ page: 'locataire-detail', id: locId }, '', '#locataire-detail/' + locId);
+  }
   document.getElementById('page-locataire-detail').classList.add('active');
 
   const locNom = `${loc.civilite || ''} ${loc.prenom || ''} ${loc.nom || ''}`.trim();
