@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup 2 — Style Revolut, Tabs horizontaux</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Inter', -apple-system, sans-serif; background: #F7F7F8; color: #1A1A2E; min-height: 100vh; }
+
+/* ── TOPBAR ── */
+.navbar {
+  height: 60px; background: #FFFFFF; border-bottom: 1px solid #EBEBEF;
+  display: flex; align-items: center; padding: 0 32px;
+  position: sticky; top: 0; z-index: 100;
+}
+.navbar-logo { display: flex; align-items: center; gap: 10px; margin-right: 32px; }
+.navbar-logo .icon { width: 32px; height: 32px; border-radius: 8px; background: #1A1A2E; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 11px; }
+.navbar-logo span { font-size: 15px; font-weight: 700; }
+
+.navbar-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+.navbar-search {
+  padding: 8px 14px 8px 34px; border: 1px solid #EBEBEF; border-radius: 10px;
+  font-size: 13px; background: #F7F7F8; width: 300px; outline: none;
+}
+.navbar-search:focus { border-color: #6C5CE7; background: white; }
+.navbar-select {
+  padding: 8px 14px; border: 1px solid #EBEBEF; border-radius: 10px;
+  font-size: 13px; background: white; cursor: pointer;
+}
+.navbar-btn { padding: 8px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; background: #1A1A2E; color: white; }
+
+/* ── TABS ── */
+.tabs-bar {
+  background: #FFFFFF; border-bottom: 1px solid #EBEBEF;
+  display: flex; padding: 0 32px; gap: 0; overflow-x: auto;
+}
+.tab-item {
+  padding: 14px 22px; font-size: 13px; font-weight: 500; color: #8B8D9E;
+  cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s;
+  white-space: nowrap; display: flex; align-items: center; gap: 8px;
+}
+.tab-item:hover { color: #1A1A2E; }
+.tab-item.active { color: #1A1A2E; border-bottom-color: #1A1A2E; font-weight: 600; }
+.tab-badge { background: #EBEBEF; color: #6B6D82; font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600; }
+.tab-item.active .tab-badge { background: #1A1A2E; color: white; }
+
+/* ── CONTENT ── */
+.content { max-width: 1240px; margin: 0 auto; padding: 28px 32px; }
+
+/* Sub-tabs (like Draft / Upcoming / Past) */
+.sub-tabs { display: flex; gap: 4px; margin-bottom: 20px; }
+.sub-tab {
+  padding: 7px 16px; border-radius: 20px; font-size: 13px; font-weight: 500;
+  color: #6B6D82; cursor: pointer; border: none; background: none; transition: all 0.15s;
+}
+.sub-tab:hover { background: #EBEBEF; }
+.sub-tab.active { background: #1A1A2E; color: white; }
+
+/* ── KPIs ── */
+.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+.kpi-card { background: white; border: 1px solid #EBEBEF; border-radius: 14px; padding: 18px 20px; }
+.kpi-label { font-size: 11px; color: #8B8D9E; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.kpi-value { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
+.kpi-sub { font-size: 11px; color: #8B8D9E; margin-top: 3px; }
+
+/* ── TOOLBAR ── */
+.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.toolbar-search { padding: 7px 12px 7px 32px; border: 1px solid #EBEBEF; border-radius: 8px; font-size: 12px; background: white; width: 180px; }
+.toolbar-filter { padding: 7px 14px; border: 1px solid #EBEBEF; border-radius: 8px; font-size: 12px; background: white; cursor: pointer; display: flex; align-items: center; gap: 6px; color: #6B6D82; }
+.toolbar-right { margin-left: auto; display: flex; gap: 8px; }
+.toolbar-btn { padding: 8px 16px; border-radius: 8px; font-size: 12px; font-weight: 600; border: 1px solid #EBEBEF; background: white; cursor: pointer; color: #1A1A2E; display: flex; align-items: center; gap: 6px; }
+.toolbar-btn.accent { background: #6C5CE7; color: white; border-color: #6C5CE7; }
+
+/* ── TABLE ── */
+.data-table { width: 100%; border-collapse: separate; border-spacing: 0; background: white; border: 1px solid #EBEBEF; border-radius: 14px; overflow: hidden; }
+.data-table thead th {
+  text-align: left; padding: 12px 16px; font-size: 11px; font-weight: 500;
+  color: #8B8D9E; text-transform: uppercase; letter-spacing: 0.4px;
+  border-bottom: 1px solid #EBEBEF;
+}
+.data-table tbody td { padding: 12px 16px; font-size: 13px; border-bottom: 1px solid #F5F5F7; }
+.data-table tbody tr:last-child td { border-bottom: none; }
+.data-table tbody tr:hover { background: #FAFAFA; }
+
+.avatar-sm { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: white; }
+.name-cell .main { font-weight: 600; font-size: 13px; }
+.name-cell .sub { font-size: 11px; color: #8B8D9E; }
+
+.status { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+.status-actif { background: rgba(0,179,126,0.08); color: #00B37E; }
+.status-retard { background: rgba(231,76,60,0.08); color: #E74C3C; }
+
+.amount { font-weight: 600; font-variant-numeric: tabular-nums; }
+.amount.negative { color: #E74C3C; }
+
+/* Chart area */
+.chart-grid { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; margin-top: 24px; }
+.chart-box { background: white; border: 1px solid #EBEBEF; border-radius: 14px; padding: 20px; }
+.chart-box h3 { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+.chart-placeholder { height: 180px; background: #FAFAFA; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #8B8D9E; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<!-- NAVBAR -->
+<div class="navbar">
+  <div class="navbar-logo">
+    <div class="icon">GL</div>
+    <span>Gestion Locative</span>
+  </div>
+  <div class="navbar-right">
+    <input class="navbar-search" placeholder="&#x1F50D; Rechercher un locataire, bien..." />
+    <select class="navbar-select">
+      <option>Tous les propri&eacute;taires</option>
+      <option>JKL Immo</option>
+    </select>
+    <button class="navbar-btn">Connexion Google</button>
+  </div>
+</div>
+
+<!-- TABS -->
+<div class="tabs-bar">
+  <div class="tab-item active">Tableau de bord</div>
+  <div class="tab-item">Propri&eacute;taires <span class="tab-badge">2</span></div>
+  <div class="tab-item">Biens <span class="tab-badge">3</span></div>
+  <div class="tab-item">Locataires <span class="tab-badge">1</span></div>
+  <div class="tab-item">Baux <span class="tab-badge">1</span></div>
+  <div class="tab-item">Paiements</div>
+  <div class="tab-item">Rendement</div>
+  <div class="tab-item">G&eacute;n&eacute;rer Documents</div>
+</div>
+
+<div class="content">
+  <!-- KPIs -->
+  <div class="kpi-row">
+    <div class="kpi-card">
+      <div class="kpi-label">Loyers appel&eacute;s</div>
+      <div class="kpi-value">1 620 &euro;</div>
+      <div class="kpi-sub">Ce mois</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Encaiss&eacute;</div>
+      <div class="kpi-value">405 &euro;</div>
+      <div class="kpi-sub">Sur 12 mois</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Impay&eacute;s</div>
+      <div class="kpi-value" style="color:#E74C3C;">135 &euro;</div>
+      <div class="kpi-sub">1 bail concern&eacute;</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Baux actifs</div>
+      <div class="kpi-value">1</div>
+      <div class="kpi-sub">sur 1 total</div>
+    </div>
+  </div>
+
+  <!-- Sub-tabs + toolbar -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <div class="sub-tabs">
+      <button class="sub-tab active">Tous</button>
+      <button class="sub-tab">Actifs</button>
+      <button class="sub-tab">En retard</button>
+    </div>
+    <div class="toolbar-right">
+      <button class="toolbar-btn">&#x2B07; Exporter</button>
+      <button class="toolbar-btn accent">+ Nouveau bail</button>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>All &middot; 3</th>
+        <th>Bien</th>
+        <th>Loyer</th>
+        <th>Statut</th>
+        <th>Prochain paiement</th>
+        <th style="text-align:right;">Montant</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="avatar-sm" style="background:#6C5CE7;">LA</div>
+            <div class="name-cell">
+              <div class="main">Luis Pereira ATS</div>
+              <div class="sub">BAIL-008</div>
+            </div>
+          </div>
+        </td>
+        <td>&#x1F697; Box 08</td>
+        <td class="amount">135,00 &euro;</td>
+        <td><span class="status status-actif">Actif</span></td>
+        <td>1 Mai 2026</td>
+        <td style="text-align:right;" class="amount">-135,00 &euro;</td>
+      </tr>
+      <tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="avatar-sm" style="background:#00B37E;">MD</div>
+            <div class="name-cell">
+              <div class="main">Marie Dupont</div>
+              <div class="sub">BAIL-012</div>
+            </div>
+          </div>
+        </td>
+        <td>&#x1F3E0; Appt 3B</td>
+        <td class="amount">850,00 &euro;</td>
+        <td><span class="status status-actif">Actif</span></td>
+        <td>1 Mai 2026</td>
+        <td style="text-align:right;" class="amount">-850,00 &euro;</td>
+      </tr>
+      <tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="avatar-sm" style="background:#F5A623;">JP</div>
+            <div class="name-cell">
+              <div class="main">Jean-Pierre Martin</div>
+              <div class="sub">BAIL-005</div>
+            </div>
+          </div>
+        </td>
+        <td>&#x1F3EA; Local 2</td>
+        <td class="amount">1 200,00 &euro;</td>
+        <td><span class="status status-retard">En retard</span></td>
+        <td style="color:#E74C3C;">1 Avr 2026</td>
+        <td style="text-align:right;" class="amount negative">-1 200,00 &euro;</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Charts -->
+  <div class="chart-grid">
+    <div class="chart-box">
+      <h3>&Eacute;volution des encaissements</h3>
+      <div class="chart-placeholder">Graphique barres — 12 derniers mois</div>
+    </div>
+    <div class="chart-box">
+      <h3>R&eacute;partition par type de bien</h3>
+      <div class="chart-placeholder">Graphique donut</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
