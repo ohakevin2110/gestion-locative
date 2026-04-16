@@ -1642,6 +1642,13 @@ function openBienFiche(bienId) {
     html += '</div>';
     html += '<div id="amort-' + bien.id + '" style="display:none;"></div>';
     html += '</div>';
+  } else {
+    // No credit info yet — show import button
+    html += '<div style="margin-top:16px;padding:14px;border-radius:12px;background:rgba(108,92,231,0.04);border:1px dashed rgba(108,92,231,0.3);text-align:center;">';
+    html += '<div style="font-size:13px;color:var(--text-light);margin-bottom:8px;">Aucun cr\u00e9dit renseign\u00e9</div>';
+    html += '<button onclick="importTableauBanque(\'' + bien.id + '\')" style="padding:10px 20px;border:none;border-radius:8px;background:var(--accent);color:white;font-size:13px;font-weight:600;cursor:pointer;">\uD83C\uDFE6 Importer tableau d\'amortissement banque</button>';
+    html += '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Fichier JSON export\u00e9 depuis votre tableau banque</div>';
+    html += '</div>';
   }
   html += '</div></div>';
 
@@ -2183,7 +2190,8 @@ function ficheEnvoyerEmail(locId) {
   }
 
   renderEmailPreview();
-  document.getElementById('modal-email').style.display = 'flex';
+  const emailModal = document.getElementById('modal-email');
+  if (emailModal) emailModal.style.display = 'flex';
 }
 
 function renderProprios() {
@@ -2194,7 +2202,7 @@ function renderProprios() {
       <td>${p.id}</td><td>${tag}</td><td><strong>${p.nom}</strong></td>
       <td>${p.adresse||''}</td><td>${p.cp||''} ${p.ville||''}</td>
       <td>${p.siret||'-'}</td><td>${p.email||''}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteProprio(${i})">Suppr.</button></td>
+      <td style="white-space:nowrap;"><button class="btn btn-sm" style="background:var(--accent);color:white;margin-right:4px;" onclick="editProprio(${i})">Modifier</button><button class="btn btn-danger btn-sm" onclick="deleteProprio(${i})">Suppr.</button></td>
     </tr>`;
   }).join('') || '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-light)">Aucun propriétaire. Cliquez sur "+ Ajouter" pour commencer.</td></tr>';
 }
@@ -2225,7 +2233,7 @@ function renderLocataires() {
     <td><a href="#" onclick="event.preventDefault();openLocataireFiche('${l.id}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">${l.nom}</a></td>
     <td><a href="#" onclick="event.preventDefault();openLocataireFiche('${l.id}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">${l.prenom}</a></td>
     <td>${l.adresse}, ${l.cp} ${l.ville}</td><td>${l.tel}</td><td>${l.email}</td>
-    <td><button class="btn btn-danger btn-sm" onclick="deleteLocataire(${i})">Suppr.</button></td>
+    <td style="white-space:nowrap;"><button class="btn btn-sm" style="background:var(--accent);color:white;margin-right:4px;" onclick="openLocataireFiche('${l.id}')">Voir</button><button class="btn btn-danger btn-sm" onclick="deleteLocataire(${i})">Suppr.</button></td>
   </tr>`; }).join('');
 }
 
@@ -2670,20 +2678,28 @@ function renderGenBaux() {
 }
 
 // ── DELETE ──
+function editProprio(i) {
+  const p = data.proprios[i]; if (!p) return;
+  openModal('proprio', p.id);
+}
+
 function editBien(i) {
   const b = data.biens[i]; if (!b) return;
   openModal('bien', b.id);
 }
 
 function showConfirm(message, onConfirm) {
-  document.getElementById('confirm-msg').textContent = message;
-  document.getElementById('modal-confirm').style.display = 'flex';
+  const msgEl = document.getElementById('confirm-msg');
+  const modalEl = document.getElementById('modal-confirm');
   const btn = document.getElementById('confirm-btn');
+  if (!msgEl || !modalEl || !btn) return;
+  msgEl.textContent = message;
+  modalEl.style.display = 'flex';
   const newBtn = btn.cloneNode(true);
   btn.parentNode.replaceChild(newBtn, btn);
   newBtn.addEventListener('click', () => { closeConfirm(); onConfirm(); });
 }
-function closeConfirm() { document.getElementById('modal-confirm').style.display = 'none'; }
+function closeConfirm() { const el = document.getElementById('modal-confirm'); if (el) el.style.display = 'none'; }
 
 function deleteProprio(i) { showConfirm('\u00cates-vous s\u00fbr de vouloir supprimer ce propri\u00e9taire ?', () => { data.proprios.splice(i,1); saveData(); refreshAll(); }); }
 function deleteBien(i) { showConfirm('\u00cates-vous s\u00fbr de vouloir supprimer ce bien ?', () => { data.biens.splice(i,1); saveData(); refreshAll(); }); }
@@ -2699,23 +2715,27 @@ function openModal(type, editId) {
   modal.classList.add('show');
 
   if (type === 'proprio') {
-    title.textContent = 'Ajouter un propriétaire / bailleur';
+    const existingProprio = editId ? data.proprios.find(x => x.id === editId) : null;
+    const ep = existingProprio || {};
+    const esc = (s) => String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+    title.textContent = existingProprio ? 'Modifier le propriétaire' : 'Ajouter un propriétaire / bailleur';
+    const types = ['Personnel','SCI','SARL','SAS','EURL','Autre société'];
+    const typeOpts = types.map(t => `<option value="${t}" ${(ep.type||'Personnel')===t?'selected':''}>${t === 'Personnel' ? 'Personnel (nom propre)' : t}</option>`).join('');
     body.innerHTML = `
-      <div class="form-row"><div class="form-group"><label>Type</label><select id="m-pr-type">
-        <option value="Personnel">Personnel (nom propre)</option>
-        <option value="SCI">SCI</option><option value="SARL">SARL</option>
-        <option value="SAS">SAS</option><option value="EURL">EURL</option>
-        <option value="Autre société">Autre société</option>
-      </select></div></div>
-      <div class="form-row"><div class="form-group"><label>Nom / Raison sociale</label><input id="m-pr-nom" placeholder="Ex: Jean Dupont ou SCI Les Entrepôts"></div></div>
-      <div class="form-row"><div class="form-group"><label>Adresse</label><input id="m-pr-adresse"></div></div>
-      <div class="form-row"><div class="form-group"><label>Code postal</label><input id="m-pr-cp"></div>
-      <div class="form-group"><label>Ville</label><input id="m-pr-ville"></div></div>
-      <div class="form-row"><div class="form-group"><label>SIRET</label><input id="m-pr-siret" placeholder="Obligatoire pour les sociétés"></div>
-      <div class="form-group"><label>N° TVA</label><input id="m-pr-tva"></div></div>
-      <div class="form-row"><div class="form-group"><label>Téléphone</label><input id="m-pr-tel"></div>
-      <div class="form-group"><label>Email</label><input id="m-pr-email" type="email"></div></div>`;
-    footer.innerHTML = `<button class="btn btn-outline" onclick="closeModal()">Annuler</button><button class="btn btn-success" onclick="saveProprio()">Enregistrer</button>`;
+      <div class="form-row"><div class="form-group"><label>Type</label><select id="m-pr-type">${typeOpts}</select></div></div>
+      <div class="form-row"><div class="form-group"><label>Nom / Raison sociale</label><input id="m-pr-nom" value="${esc(ep.nom)}" placeholder="Ex: Jean Dupont ou SCI Les Entrepôts"></div></div>
+      <div class="form-row"><div class="form-group"><label>Adresse</label><input id="m-pr-adresse" value="${esc(ep.adresse)}"></div></div>
+      <div class="form-row"><div class="form-group"><label>Code postal</label><input id="m-pr-cp" value="${esc(ep.cp)}"></div>
+      <div class="form-group"><label>Ville</label><input id="m-pr-ville" value="${esc(ep.ville)}"></div></div>
+      <div class="form-row"><div class="form-group"><label>SIRET</label><input id="m-pr-siret" value="${esc(ep.siret)}" placeholder="Obligatoire pour les sociétés"></div>
+      <div class="form-group"><label>N° TVA</label><input id="m-pr-tva" value="${esc(ep.tva)}"></div></div>
+      <div class="form-row"><div class="form-group"><label>Téléphone</label><input id="m-pr-tel" value="${esc(ep.tel)}"></div>
+      <div class="form-group"><label>Email</label><input id="m-pr-email" type="email" value="${esc(ep.email)}"></div></div>`;
+    if (existingProprio) {
+      footer.innerHTML = `<button class="btn btn-outline" onclick="closeModal()">Annuler</button><button class="btn btn-success" onclick="updateProprio('${editId}')">Enregistrer</button>`;
+    } else {
+      footer.innerHTML = `<button class="btn btn-outline" onclick="closeModal()">Annuler</button><button class="btn btn-success" onclick="saveProprio()">Enregistrer</button>`;
+    }
   }
   else if (type === 'bien') {
     const existingBien = editId ? data.biens.find(x => x.id === editId) : null;
@@ -2788,6 +2808,23 @@ function saveProprio() {
     adresse: gv('m-pr-adresse'), cp: gv('m-pr-cp'), ville: gv('m-pr-ville'),
     siret: gv('m-pr-siret'), tva: gv('m-pr-tva'), tel: gv('m-pr-tel'), email: gv('m-pr-email')
   });
+  saveData(); refreshAll(); closeModal();
+}
+
+function updateProprio(proprioId) {
+  const proprio = data.proprios.find(x => x.id === proprioId);
+  if (!proprio) return;
+  const nom = gv('m-pr-nom');
+  if (!nom) { alert('Le nom est obligatoire'); return; }
+  proprio.type = gv('m-pr-type');
+  proprio.nom = nom;
+  proprio.adresse = gv('m-pr-adresse');
+  proprio.cp = gv('m-pr-cp');
+  proprio.ville = gv('m-pr-ville');
+  proprio.siret = gv('m-pr-siret');
+  proprio.tva = gv('m-pr-tva');
+  proprio.tel = gv('m-pr-tel');
+  proprio.email = gv('m-pr-email');
   saveData(); refreshAll(); closeModal();
 }
 
@@ -4284,9 +4321,14 @@ async function gdriveUploadPDF(blob, filename, folderId) {
   const form = new FormData();
   form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
   form.append('file', blob);
-  await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+  const resp = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
     method: 'POST', headers: { 'Authorization': 'Bearer ' + gdriveToken }, body: form
   });
+  if (!resp.ok) {
+    const err = await resp.text().catch(() => 'Unknown error');
+    throw new Error('Upload Drive échoué: ' + resp.status + ' ' + err);
+  }
+  return resp;
 }
 
 async function genererDocumentsDrive() {
@@ -4537,7 +4579,8 @@ function ouvrirEnvoiEmail() {
   }
 
   renderEmailPreview();
-  document.getElementById('modal-email').style.display = 'flex';
+  const emailModal = document.getElementById('modal-email');
+  if (emailModal) emailModal.style.display = 'flex';
 }
 
 function renderEmailPreview() {
@@ -4553,7 +4596,7 @@ function renderEmailPreview() {
   html += '<div style="font-size:13px;"><strong style="color:var(--warning);">\uD83E\uDDEA Mode test</strong>';
   html += '<div style="font-size:11px;color:var(--text-muted);margin-top:1px;">Redirige tous les emails vers votre adresse</div></div>';
   html += '</label>';
-  html += '<input type="email" id="email-test-address" value="' + (window._emailTestAddress || (data.proprietaires && data.proprietaires[0] ? data.proprietaires[0].email || '' : '')) + '" placeholder="votre@email.com" style="width:220px;padding:7px 12px;border:1px solid ' + (window._emailTestMode ? 'var(--warning)' : 'var(--border)') + ';border-radius:8px;font-size:12px;background:white;' + (window._emailTestMode ? '' : 'opacity:0.5;') + '">';
+  html += '<input type="email" id="email-test-address" value="' + (window._emailTestAddress || (data.proprios && data.proprios[0] ? data.proprios[0].email || '' : '')) + '" placeholder="votre@email.com" style="width:220px;padding:7px 12px;border:1px solid ' + (window._emailTestMode ? 'var(--warning)' : 'var(--border)') + ';border-radius:8px;font-size:12px;background:white;' + (window._emailTestMode ? '' : 'opacity:0.5;') + '">';
   html += '</div>';
 
   html += '<div style="margin-bottom:16px;padding:12px 16px;background:rgba(108,92,231,0.06);border-radius:10px;border:1px solid rgba(108,92,231,0.12);font-size:13px;">';
@@ -4620,13 +4663,15 @@ function previewPdfAttachment(idx) {
 
 function toggleEmailTestMode() {
   const addrInput = document.getElementById('email-test-address');
-  window._emailTestMode = document.getElementById('email-test-mode').checked;
+  const testModeEl = document.getElementById('email-test-mode');
+  window._emailTestMode = testModeEl ? testModeEl.checked : false;
   window._emailTestAddress = addrInput ? addrInput.value.trim() : '';
   renderEmailPreview();
 }
 
 function fermerEmailModal() {
-  document.getElementById('modal-email').style.display = 'none';
+  const modal = document.getElementById('modal-email');
+  if (modal) modal.style.display = 'none';
   emailQueue = [];
 }
 
@@ -4712,9 +4757,13 @@ function buildMimeMessage(to, subject, bodyText, pdfBase64, pdfFilename) {
 async function envoyerUnEmail(idx) {
   const eq = emailQueue[idx];
   const statusEl = document.getElementById('email-status-' + idx);
-  let to = document.getElementById('email-to-' + idx).value.trim();
-  let sujet = document.getElementById('email-sujet-' + idx).value.trim();
-  const corps = document.getElementById('email-corps-' + idx).value;
+  const toEl = document.getElementById('email-to-' + idx);
+  const sujetEl = document.getElementById('email-sujet-' + idx);
+  const corpsEl = document.getElementById('email-corps-' + idx);
+  if (!toEl || !sujetEl || !corpsEl) { if (statusEl) statusEl.textContent = 'Erreur formulaire'; return false; }
+  let to = toEl.value.trim();
+  let sujet = sujetEl.value.trim();
+  const corps = corpsEl.value;
 
   // Test mode: override recipient and prefix subject
   if (window._emailTestMode) {
@@ -4723,7 +4772,7 @@ async function envoyerUnEmail(idx) {
     if (!sujet.startsWith('[TEST]')) sujet = '[TEST] ' + sujet;
   }
 
-  if (!to) { statusEl.textContent = 'Pas d\'email'; statusEl.style.background = 'rgba(239,68,68,0.1)'; statusEl.style.color = 'var(--danger)'; return false; }
+  if (!to) { if (statusEl) { statusEl.textContent = 'Pas d\'email'; statusEl.style.background = 'rgba(239,68,68,0.1)'; statusEl.style.color = 'var(--danger)'; } return false; }
 
   statusEl.textContent = 'G\u00e9n\u00e9ration PDF...';
   statusEl.style.background = 'rgba(108,92,231,0.1)';

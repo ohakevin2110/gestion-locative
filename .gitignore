@@ -1,0 +1,8 @@
+.DS_Store
+*.~lock.*
+Old/
+Documents_PDF/
+*.xlsx
+*.py
+mockup-*.html
+Gestion_Locative_Demo.html
