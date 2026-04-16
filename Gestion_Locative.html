@@ -2267,7 +2267,7 @@ function renderBaux() {
       <td>${fmtDate(b.debut)}</td><td>${fmtDate(b.fin)}</td>
       <td class="money">${fmt(b.loyer)}</td><td class="money">${chargesInfo}</td>
       <td><span class="status status-${st}">${b.statut}</span></td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteBail(${i})">Suppr.</button></td>
+      <td style="white-space:nowrap;"><button class="btn btn-sm" style="background:var(--accent);color:white;margin-right:4px;" onclick="openLocataireFiche('${b.locId}')">Modifier</button><button class="btn btn-danger btn-sm" onclick="deleteBail(${i})">Suppr.</button></td>
     </tr>`;
   }).join('');
 }
@@ -2791,8 +2791,8 @@ function openModal(type, editId) {
       <div class="form-row"><div class="form-group"><label>Loyer HT mensuel (€)</label><input id="m-ba-loyer" type="number" step="0.01"></div>
       <div class="form-group"><label>Dépôt de garantie (€)</label><input id="m-ba-depot" type="number" step="0.01"></div></div>
       <div class="form-row"><div class="form-group"><label>Montant charges (€)</label><input id="m-ba-charges" type="number" step="0.01"></div>
-      <div class="form-group"><label>Périodicité charges</label><select id="m-ba-periocharges"><option value="mensuelle">Mensuelle</option><option value="trimestrielle">Trimestrielle</option><option value="annuelle">Annuelle</option></select></div>
-      <div class="form-group"><label>Trimestres (mois de facturation)</label><select id="m-ba-trimestres"><option value="1,4,7,10">Jan / Avr / Juil / Oct</option><option value="2,5,8,11">Fév / Mai / Août / Nov</option><option value="3,6,9,12">Mars / Juin / Sept / Déc</option></select></div></div>
+      <div class="form-group"><label>Périodicité charges</label><select id="m-ba-periocharges" onchange="document.getElementById('m-ba-trimestres-group').style.display = this.value==='trimestrielle' ? '' : 'none'"><option value="mensuelle">Mensuelle</option><option value="trimestrielle">Trimestrielle</option><option value="annuelle">Annuelle</option></select></div>
+      <div class="form-group" id="m-ba-trimestres-group" style="display:none;"><label>Trimestres (mois de facturation)</label><select id="m-ba-trimestres"><option value="1,4,7,10">Jan / Avr / Juil / Oct</option><option value="2,5,8,11">Fév / Mai / Août / Nov</option><option value="3,6,9,12">Mars / Juin / Sept / Déc</option></select></div></div>
       <div class="form-row"><div class="form-group"><label>Jour d'échéance</label><input id="m-ba-jour" type="number" min="1" max="28" value="1"></div>
       <div class="form-group"><label>Statut</label><select id="m-ba-statut"><option value="Actif">Actif</option><option value="Résilié">Résilié</option><option value="En attente">En attente</option><option value="Terminé">Terminé</option><option value="Expiré">Expiré</option></select></div></div>`;
     footer.innerHTML = `<button class="btn btn-outline" onclick="closeModal()">Annuler</button><button class="btn btn-success" onclick="saveBail()">Enregistrer</button>`;
@@ -2818,6 +2818,7 @@ function openModalBailForBien(bienId) {
     }
     return;
   }
+  window._openBienFicheAfterSave = bienId;
   openModal('bail');
   // Pre-select the bien in the dropdown
   setTimeout(() => {
@@ -3231,6 +3232,12 @@ function saveBail() {
     statut: gv('m-ba-statut')
   });
   saveData(); refreshAll(); closeModal();
+  // If we came from a bien fiche, re-open it to refresh rendements
+  if (window._openBienFicheAfterSave) {
+    const returnBienId = window._openBienFicheAfterSave;
+    window._openBienFicheAfterSave = null;
+    openBienFiche(returnBienId);
+  }
 }
 
 

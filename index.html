@@ -1563,11 +1563,22 @@ function openBienFiche(bienId) {
   const chargesAn = getChargesAnnuelles(bien);
   const mensCredit = getMensualiteTotaleCredit(bien);
   const capitalRestant = getCapitalRestant(bien);
+  const hasBankTableau = bien.tableauBanque && bien.tableauBanque.length > 0;
+  const crdBanque = hasBankTableau ? getCapitalRestantBanque(bien) : capitalRestant;
+  // Use bank mensualité if available (manual fields may be empty when only bank data imported)
+  let mensCreditEffective = mensCredit;
+  if (hasBankTableau) {
+    const _now = new Date();
+    const _nowStr = _now.getFullYear() + '-' + String(_now.getMonth()+1).padStart(2,'0');
+    const _row = bien.tableauBanque.find(r => r.d && r.d.slice(0,7) >= _nowStr && r.e > 0);
+    if (_row) mensCreditEffective = _row.e + (bien.assuranceCredit || 0);
+  }
   const loyerAnnuel = bauxActifs.reduce((s, b) => s + (b.loyer || 0) * 12, 0);
   const qp = (bien.quotePart || 100) / 100;
   const rendBrut = coutAcq > 0 ? (loyerAnnuel / coutAcq * 100) : 0;
   const rendNet = coutAcq > 0 ? ((loyerAnnuel - chargesAn) / coutAcq * 100) : 0;
-  const cashflow = (loyerAnnuel / 12) - (chargesAn / 12) - mensCredit;
+  const cashflow = (loyerAnnuel / 12) - (chargesAn / 12) - mensCreditEffective;
+  const valeurNette = (bien.valeurActuelle || bien.prixAchat || 0) - crdBanque;
 
   const isCoOwner = qp < 1;
 
@@ -1579,6 +1590,7 @@ function openBienFiche(bienId) {
   html += '<div style="background:var(--accent-glow);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Rend. brut</div><div style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">' + rendBrut.toFixed(2) + '%</div></div>';
   html += '<div style="background:var(--accent-glow);padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Rend. net</div><div style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">' + rendNet.toFixed(2) + '%</div></div>';
   html += '<div style="background:' + (cashflow >= 0 ? 'var(--success-light)' : 'var(--danger-light)') + ';padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Cashflow / mois</div><div style="font-size:20px;font-weight:700;color:' + (cashflow >= 0 ? 'var(--success)' : 'var(--danger)') + ';margin-top:4px;">' + fmt(cashflow) + '</div></div>';
+  html += '<div style="background:' + (valeurNette >= 0 ? 'rgba(16,185,129,0.06)' : 'var(--danger-light)') + ';padding:14px;border-radius:12px;text-align:center;"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;">Valeur nette actifs</div><div style="font-size:20px;font-weight:700;color:' + (valeurNette >= 0 ? 'var(--success)' : 'var(--danger)') + ';margin-top:4px;">' + fmt(valeurNette) + '</div></div>';
   html += '</div>';
   // D\u00e9tail acquisition
   if (bien.prixAchat) {
@@ -1591,9 +1603,7 @@ function openBienFiche(bienId) {
     html += '</div>';
   }
   // Crédit immobilier détail
-  const hasBankTableau = bien.tableauBanque && bien.tableauBanque.length > 0;
   if (bien.montantCredit || hasBankTableau) {
-    const crdBanque = hasBankTableau ? getCapitalRestantBanque(bien) : capitalRestant;
     const montantOriginal = bien.montantCredit || (hasBankTableau ? bien.tableauBanque[0].r : 0);
     const totalEcheances = bien.dureeCredit || (hasBankTableau ? bien.tableauBanque.length : 0);
     const echeances = bien.dateDebutCredit ? calcEcheancesPayees(bien.dateDebutCredit) : 0;
@@ -2267,7 +2277,7 @@ function renderBaux() {
       <td>${fmtDate(b.debut)}</td><td>${fmtDate(b.fin)}</td>
       <td class="money">${fmt(b.loyer)}</td><td class="money">${chargesInfo}</td>
       <td><span class="status status-${st}">${b.statut}</span></td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteBail(${i})">Suppr.</button></td>
+      <td style="white-space:nowrap;"><button class="btn btn-sm" style="background:var(--accent);color:white;margin-right:4px;" onclick="openLocataireFiche('${b.locId}')">Modifier</button><button class="btn btn-danger btn-sm" onclick="deleteBail(${i})">Suppr.</button></td>
     </tr>`;
   }).join('');
 }
@@ -2791,8 +2801,8 @@ function openModal(type, editId) {
       <div class="form-row"><div class="form-group"><label>Loyer HT mensuel (€)</label><input id="m-ba-loyer" type="number" step="0.01"></div>
       <div class="form-group"><label>Dépôt de garantie (€)</label><input id="m-ba-depot" type="number" step="0.01"></div></div>
       <div class="form-row"><div class="form-group"><label>Montant charges (€)</label><input id="m-ba-charges" type="number" step="0.01"></div>
-      <div class="form-group"><label>Périodicité charges</label><select id="m-ba-periocharges"><option value="mensuelle">Mensuelle</option><option value="trimestrielle">Trimestrielle</option><option value="annuelle">Annuelle</option></select></div>
-      <div class="form-group"><label>Trimestres (mois de facturation)</label><select id="m-ba-trimestres"><option value="1,4,7,10">Jan / Avr / Juil / Oct</option><option value="2,5,8,11">Fév / Mai / Août / Nov</option><option value="3,6,9,12">Mars / Juin / Sept / Déc</option></select></div></div>
+      <div class="form-group"><label>Périodicité charges</label><select id="m-ba-periocharges" onchange="document.getElementById('m-ba-trimestres-group').style.display = this.value==='trimestrielle' ? '' : 'none'"><option value="mensuelle">Mensuelle</option><option value="trimestrielle">Trimestrielle</option><option value="annuelle">Annuelle</option></select></div>
+      <div class="form-group" id="m-ba-trimestres-group" style="display:none;"><label>Trimestres (mois de facturation)</label><select id="m-ba-trimestres"><option value="1,4,7,10">Jan / Avr / Juil / Oct</option><option value="2,5,8,11">Fév / Mai / Août / Nov</option><option value="3,6,9,12">Mars / Juin / Sept / Déc</option></select></div></div>
       <div class="form-row"><div class="form-group"><label>Jour d'échéance</label><input id="m-ba-jour" type="number" min="1" max="28" value="1"></div>
       <div class="form-group"><label>Statut</label><select id="m-ba-statut"><option value="Actif">Actif</option><option value="Résilié">Résilié</option><option value="En attente">En attente</option><option value="Terminé">Terminé</option><option value="Expiré">Expiré</option></select></div></div>`;
     footer.innerHTML = `<button class="btn btn-outline" onclick="closeModal()">Annuler</button><button class="btn btn-success" onclick="saveBail()">Enregistrer</button>`;
@@ -2818,6 +2828,7 @@ function openModalBailForBien(bienId) {
     }
     return;
   }
+  window._openBienFicheAfterSave = bienId;
   openModal('bail');
   // Pre-select the bien in the dropdown
   setTimeout(() => {
@@ -3231,6 +3242,12 @@ function saveBail() {
     statut: gv('m-ba-statut')
   });
   saveData(); refreshAll(); closeModal();
+  // If we came from a bien fiche, re-open it to refresh rendements
+  if (window._openBienFicheAfterSave) {
+    const returnBienId = window._openBienFicheAfterSave;
+    window._openBienFicheAfterSave = null;
+    openBienFiche(returnBienId);
+  }
 }
 
 
