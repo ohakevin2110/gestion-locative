@@ -40,6 +40,46 @@
   --shadow-sm: 0 1px 4px rgba(0,0,0,0.04);
   --sidebar-width: 240px;
 }
+/* Dark mode */
+body.dark-mode {
+  --primary: #E6E7F0;
+  --accent: #8B7BF0;
+  --accent-light: #a29bfe;
+  --accent-glow: rgba(139,123,240,0.14);
+  --danger: #F87171;
+  --danger-light: rgba(248,113,113,0.12);
+  --success: #34D399;
+  --success-light: rgba(52,211,153,0.12);
+  --warning: #FBBF24;
+  --warning-light: rgba(251,191,36,0.12);
+  --bg: #0F1019;
+  --glass: #1A1B2E;
+  --glass-strong: #1F2136;
+  --glass-border: #2D2F42;
+  --glass-hover: #252741;
+  --text: #E6E7F0;
+  --text-light: #9FA3B8;
+  --text-muted: #6B6E85;
+  --border: #2D2F42;
+  --shadow: 0 4px 16px rgba(0,0,0,0.4);
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.3);
+}
+body.dark-mode .card,
+body.dark-mode .kpi,
+body.dark-mode .modal,
+body.dark-mode #sidebar,
+body.dark-mode .topbar,
+body.dark-mode input,
+body.dark-mode select,
+body.dark-mode textarea {
+  background: var(--glass) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+body.dark-mode thead th { background: var(--glass-strong) !important; color: var(--text-light) !important; }
+body.dark-mode table tr { border-color: var(--border) !important; }
+body.dark-mode .btn-outline { background: transparent !important; color: var(--text) !important; border-color: var(--border) !important; }
+body.dark-mode .btn-outline:hover { background: var(--glass-hover) !important; }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -743,6 +783,7 @@ input, select, textarea {
         <div class="email" id="sidebar-email"></div>
       </div>
     </div>
+    <button onclick="toggleDarkMode()" id="btn-dark-mode" title="Basculer le mode clair/sombre" style="width:100%;margin-top:10px;padding:8px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:8px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.8);font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.12)'" onmouseout="this.style.background='rgba(255,255,255,0.04)'"><span id="dark-mode-icon">🌙</span><span id="dark-mode-label">Mode sombre</span></button>
     <button onclick="handleLogout()" style="width:100%;margin-top:10px;padding:10px 12px;border:1px solid rgba(231,76,60,0.45);border-radius:8px;background:rgba(231,76,60,0.15);color:#fff;font-size:13px;font-weight:600;letter-spacing:0.2px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(231,76,60,0.35)';this.style.borderColor='rgba(231,76,60,0.8)'" onmouseout="this.style.background='rgba(231,76,60,0.15)';this.style.borderColor='rgba(231,76,60,0.45)'"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Déconnexion</button>
   </div>
 </div>
@@ -860,6 +901,7 @@ input, select, textarea {
             <th>Coordonnées</th>
             <th>Bien loué</th>
             <th class="money">Loyer</th>
+            <th class="money">Dépôt</th>
             <th>Période</th>
             <th>Statut bail</th>
             <th>Actions</th>
@@ -920,6 +962,10 @@ input, select, textarea {
       <p style="font-size:12px;color:var(--text-muted);margin:4px 0 0;">Tous les loyers en attente de règlement — relancez et suivez en un clic</p>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <div style="display:inline-flex;background:#f0f0f4;border-radius:10px;padding:3px;">
+        <button id="impayes-view-echeance" onclick="setImpayesView('echeance')" style="padding:6px 14px;border:none;background:white;color:var(--primary);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.06);">Par échéance</button>
+        <button id="impayes-view-locataire" onclick="setImpayesView('locataire')" style="padding:6px 14px;border:none;background:transparent;color:var(--text-muted);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">Par locataire</button>
+      </div>
       <select id="impayes-filtre-relance" onchange="debouncedRenderImpayes()" style="padding:8px 12px;border:1px solid var(--border);border-radius:10px;font-size:13px;background:white;">
         <option value="all">Tous les impayés</option>
         <option value="jamais">Jamais relancés</option>
@@ -3078,13 +3124,25 @@ function toggleLocataireBauxExpander(locId) {
   renderLocataires();
 }
 
+// Bascule du statut "d\u00e9p\u00f4t re\u00e7u" sur un bail
+function toggleDepotRecu(bailId) {
+  const b = data.baux.find(x => x.id === bailId);
+  if (!b) return;
+  b.depotRecu = !b.depotRecu;
+  b.depotRecuDate = b.depotRecu ? new Date().toISOString() : '';
+  const _loc = data.locataires.find(x => x.id === b.locId);
+  logActivity({ type: 'bail', proprioId: b.proprioId, locataireId: b.locId, bailId: b.id, bienId: b.bienId, details: 'D\u00e9p\u00f4t de garantie : ' + (b.depotRecu ? 'marqu\u00e9 re\u00e7u' : 'd\u00e9-marqu\u00e9') + (_loc ? ' — ' + getLocataireName(_loc) : '') });
+  saveData();
+  renderLocataires();
+}
+
 function renderLocataires() {
   const tb = document.querySelector('#table-locataires tbody');
   if (!tb) return;
   const filtered = getFilteredLocataires();
   const societeCiv = ['Société','SCI','SARL','SAS','EURL','SASU'];
   if (!filtered.length) {
-    tb.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-light);">Aucun locataire. Cliquez sur "+ Ajouter un locataire" pour commencer.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-light);">Aucun locataire. Cliquez sur "+ Ajouter un locataire" pour commencer.</td></tr>';
     return;
   }
 
@@ -3136,8 +3194,8 @@ function renderLocataires() {
       eAdresse ? `<div style="font-size:10px;color:var(--text-muted);margin-top:3px;">${eAdresse}${(l.cp||l.ville)?', ':''}${eCp} ${eVille}</div>` : ''
     ].filter(Boolean).join('') || '<span style="color:var(--text-muted);font-style:italic;font-size:11px;">Pas de coordonn\u00e9es</span>';
 
-    // Cellules 3-6 : Bien + Loyer + P\u00e9riode + Statut (bail actif principal)
-    let bienCell, loyerCell, periodeCell, statutCell;
+    // Cellules 3-6 : Bien + Loyer + D\u00e9p\u00f4t + P\u00e9riode + Statut (bail actif principal)
+    let bienCell, loyerCell, depotCell, periodeCell, statutCell;
     if (bailPrincipal) {
       const bien = data.biens.find(x => x.id === bailPrincipal.bienId);
       const eBienNom = escapeHtml(bien ? bien.designation || '' : bailPrincipal.bienId);
@@ -3145,7 +3203,6 @@ function renderLocataires() {
       bienCell = `<a href="#" onclick="event.preventDefault();openBienFiche('${eBienId}')" style="color:var(--accent);font-weight:500;text-decoration:none;">${eBienNom}</a>`
         + (multipleActifs ? `<div style="font-size:10px;color:var(--warning);margin-top:2px;">+${bauxActifs.length - 1} autre(s)</div>` : '');
 
-      const mp = getMontantsPeriode(bailPrincipal, 1); // juste pour avoir le loyerAppele
       const periLoyer = getPeriodiciteLoyer(bailPrincipal);
       const loyerUnit = periLoyer === 'trimestrielle' ? '/trim.' : '/mois';
       const loyerBase = periLoyer === 'trimestrielle' ? (bailPrincipal.loyer || 0) * 3 : (bailPrincipal.loyer || 0);
@@ -3155,6 +3212,21 @@ function renderLocataires() {
       loyerCell = `<div style="font-weight:600;">${fmt(loyerBase)}<span style="font-size:10px;color:var(--text-muted);font-weight:400;"> ${loyerUnit}</span></div>`
         + (chargesBase > 0 ? `<div style="font-size:10px;color:var(--text-muted);">+ ${fmt(chargesBase)} charges</div>` : '');
 
+      // D\u00e9p\u00f4t de garantie
+      const depotMontant = bailPrincipal.depot || 0;
+      const depotRecu = !!bailPrincipal.depotRecu;
+      const eBailId = escapeHtml(bailPrincipal.id);
+      if (depotMontant > 0) {
+        const badgeStyle = depotRecu
+          ? 'background:rgba(0,179,126,0.12);color:var(--success);border:1px solid rgba(0,179,126,0.3);'
+          : 'background:rgba(245,158,11,0.12);color:var(--warning);border:1px solid rgba(245,158,11,0.3);';
+        const badgeLabel = depotRecu ? '\u2713 Re\u00e7u' : '\u26A0 \u00c0 r\u00e9clamer';
+        depotCell = `<div style="font-weight:600;">${fmt(depotMontant)}</div>`
+          + `<button onclick="toggleDepotRecu('${eBailId}')" title="Basculer le statut du d\u00e9p\u00f4t" style="margin-top:3px;font-size:10px;padding:2px 8px;border-radius:6px;cursor:pointer;${badgeStyle}">${badgeLabel}</button>`;
+      } else {
+        depotCell = '<span style="color:var(--text-muted);font-style:italic;font-size:11px;">Non d\u00e9fini</span>';
+      }
+
       periodeCell = `<div style="font-size:12px;">${fmtDate(bailPrincipal.debut) || '?'}</div>`
         + `<div style="font-size:10px;color:var(--text-muted);">→ ${fmtDate(bailPrincipal.fin) || 'sans fin'}</div>`;
 
@@ -3163,11 +3235,13 @@ function renderLocataires() {
     } else if (bauxHisto.length) {
       bienCell = `<span style="color:var(--text-muted);font-style:italic;font-size:12px;">Aucun bail actif</span>`;
       loyerCell = '—';
+      depotCell = '—';
       periodeCell = '—';
       statutCell = `<span style="font-size:11px;color:var(--text-muted);">Historique : ${bauxHisto.length}</span>`;
     } else {
       bienCell = `<span style="color:var(--text-muted);font-style:italic;font-size:12px;">Pas encore de bail</span>`;
       loyerCell = '—';
+      depotCell = '—';
       periodeCell = '—';
       statutCell = '—';
     }
@@ -3190,6 +3264,7 @@ function renderLocataires() {
       <td style="vertical-align:top;">${coordCell}</td>
       <td style="vertical-align:top;">${bienCell}</td>
       <td class="money" style="vertical-align:top;">${loyerCell}</td>
+      <td class="money" style="vertical-align:top;">${depotCell}</td>
       <td style="vertical-align:top;">${periodeCell}</td>
       <td style="vertical-align:top;">${statutCell}</td>
       <td style="vertical-align:top;">${actionsCell}</td>
@@ -3211,7 +3286,7 @@ function renderLocataires() {
         const loyerLabel = periLoyer === 'trimestrielle' ? '/trim.' : '/mois';
         return `<tr style="background:rgba(108,92,231,0.03);">
           <td></td>
-          <td colspan="7" style="padding:8px 12px;">
+          <td colspan="8" style="padding:8px 12px;">
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px;">
               <span style="font-weight:600;color:var(--primary);">${eBailId}</span>
               <a href="#" onclick="event.preventDefault();openBienFiche('${eBienId}')" style="color:var(--accent);text-decoration:none;">${eBienNom}</a>
@@ -3274,6 +3349,32 @@ function initPaiementAnnee() {
   const selectedYear = currentVal && years.includes(parseInt(currentVal)) ? parseInt(currentVal) : cy;
   sel.innerHTML = years.map(y => `<option value="${y}" ${y===selectedYear?'selected':''}>${y}</option>`).join('');
 }
+
+// ─── Dark mode ───
+function toggleDarkMode() {
+  const isDark = document.body.classList.toggle('dark-mode');
+  try { localStorage.setItem('gl_theme', isDark ? 'dark' : 'light'); } catch(e) {}
+  const icon = document.getElementById('dark-mode-icon');
+  const label = document.getElementById('dark-mode-label');
+  if (icon) icon.textContent = isDark ? '\u2600\uFE0F' : '\uD83C\uDF19';
+  if (label) label.textContent = isDark ? 'Mode clair' : 'Mode sombre';
+}
+// Restauration au chargement
+(function restoreTheme() {
+  try {
+    const theme = localStorage.getItem('gl_theme');
+    if (theme === 'dark') {
+      document.body.classList.add('dark-mode');
+      // Synchroniser le bouton apr\u00e8s le render (DOM pas encore pr\u00eat)
+      setTimeout(() => {
+        const icon = document.getElementById('dark-mode-icon');
+        const label = document.getElementById('dark-mode-label');
+        if (icon) icon.textContent = '\u2600\uFE0F';
+        if (label) label.textContent = 'Mode clair';
+      }, 100);
+    }
+  } catch(e) {}
+})();
 
 // ─── Helpers utilitaires (#2, #17, #19, #24) ───
 // Échappe une chaîne pour insertion sûre dans innerHTML
@@ -6410,6 +6511,27 @@ Dans le cas contraire, je vous invite \u00e0 proc\u00e9der au paiement dans les 
 Restant \u00e0 votre disposition,
 Cordialement,
 {proprio_nom}`
+  },
+  relance_groupee: {
+    sujet: 'Rappel \u2014 {nb_echeances} loyers impay\u00e9s \u2014 {bien}',
+    corps: `Bonjour {civilite} {prenom} {nom},
+
+J'esp\u00e8re que vous allez bien.
+
+Sauf erreur de ma part, plusieurs \u00e9ch\u00e9ances de loyer restent \u00e0 r\u00e9gler pour le bien {bien}.
+
+D\u00e9tail des montants impay\u00e9s :
+{lignes_impayees}
+
+Total d\u00fb : {total}
+
+Si certains r\u00e8glements ont \u00e9t\u00e9 effectu\u00e9s entre-temps, merci de bien vouloir me le signaler afin que je puisse mettre \u00e0 jour votre dossier.
+
+Dans le cas contraire, je vous invite \u00e0 proc\u00e9der au r\u00e8glement de ces \u00e9ch\u00e9ances dans les meilleurs d\u00e9lais. Si vous rencontrez une difficult\u00e9, n'h\u00e9sitez pas \u00e0 me contacter pour que nous trouvions ensemble une solution (\u00e9chelonnement, report, etc.).
+
+Restant \u00e0 votre disposition pour toute question,
+Cordialement,
+{proprio_nom}`
   }
 };
 
@@ -6647,6 +6769,57 @@ function debouncedRenderImpayes() {
   _debouncedImpayesTimer = setTimeout(renderImpayes, 150);
 }
 
+// Vue active sur la page Impay\u00e9s : 'echeance' (1 ligne = 1 mois) ou 'locataire' (1 ligne = 1 locataire)
+let _impayesView = 'echeance';
+function setImpayesView(view) {
+  _impayesView = (view === 'locataire') ? 'locataire' : 'echeance';
+  // Toggle visuel des boutons
+  const btnE = document.getElementById('impayes-view-echeance');
+  const btnL = document.getElementById('impayes-view-locataire');
+  if (btnE && btnL) {
+    const activeBtn = _impayesView === 'echeance' ? btnE : btnL;
+    const inactiveBtn = _impayesView === 'echeance' ? btnL : btnE;
+    activeBtn.style.background = 'white';
+    activeBtn.style.color = 'var(--primary)';
+    activeBtn.style.boxShadow = '0 1px 3px rgba(0,0,0,0.06)';
+    inactiveBtn.style.background = 'transparent';
+    inactiveBtn.style.color = 'var(--text-muted)';
+    inactiveBtn.style.boxShadow = 'none';
+  }
+  renderImpayes();
+}
+
+// Regroupe les impay\u00e9s par locataire
+function collectImpayesParLocataire() {
+  const parLoc = {};
+  collectImpayes().forEach(item => {
+    const locId = item.bail.locId;
+    if (!parLoc[locId]) {
+      parLoc[locId] = {
+        loc: item.loc,
+        proprio: item.proprio,
+        bail: item.bail, // bail principal (le premier rencontr\u00e9)
+        bien: item.bien,
+        echeances: [],
+        totalMontant: 0,
+        retardMax: 0,
+        derniereRelance: null
+      };
+    }
+    parLoc[locId].echeances.push(item);
+    parLoc[locId].totalMontant += item.montant;
+    parLoc[locId].retardMax = Math.max(parLoc[locId].retardMax, item.retardJours);
+    // Garder la relance la plus r\u00e9cente parmi toutes les \u00e9ch\u00e9ances
+    if (item.derniereRelance) {
+      if (!parLoc[locId].derniereRelance
+          || new Date(item.derniereRelance.date) > new Date(parLoc[locId].derniereRelance.date)) {
+        parLoc[locId].derniereRelance = item.derniereRelance;
+      }
+    }
+  });
+  return Object.values(parLoc).sort((a, b) => b.retardMax - a.retardMax);
+}
+
 function renderImpayes() {
   const kpisEl = document.getElementById('impayes-kpis');
   const tbody = document.getElementById('table-impayes-full-body');
@@ -6695,7 +6868,13 @@ function renderImpayes() {
 
   // Titre dynamique avec compteur
   if (titreEl) {
-    titreEl.textContent = 'Liste des impayés' + (filtered.length !== all.length ? ` (${filtered.length} sur ${all.length})` : ` (${all.length})`);
+    const suffix = _impayesView === 'locataire' ? ' (groupés par locataire)' : '';
+    titreEl.textContent = 'Liste des impayés' + (filtered.length !== all.length ? ` (${filtered.length} sur ${all.length})` : ` (${all.length})`) + suffix;
+  }
+
+  // Vue group\u00e9e par locataire
+  if (_impayesView === 'locataire') {
+    return renderImpayesParLocataire(filtered);
   }
 
   // Tableau
@@ -6748,6 +6927,139 @@ function renderImpayes() {
       <td style="white-space:nowrap;display:flex;gap:4px;flex-wrap:wrap;">${btnRelance}${btnPaye}${btnFiche}</td>
     </tr>`;
   }).join('');
+}
+
+// Rendu "par locataire" : une ligne par locataire avec toutes ses \u00e9ch\u00e9ances impay\u00e9es
+function renderImpayesParLocataire(filteredEcheances) {
+  const tbody = document.getElementById('table-impayes-full-body');
+  if (!tbody) return;
+  // Regroupe les \u00e9ch\u00e9ances filtr\u00e9es par locId
+  const groupsMap = {};
+  filteredEcheances.forEach(item => {
+    const locId = item.bail.locId;
+    if (!groupsMap[locId]) {
+      groupsMap[locId] = { loc: item.loc, proprio: item.proprio, bail: item.bail, bien: item.bien, echeances: [], totalMontant: 0, retardMax: 0, derniereRelance: null };
+    }
+    groupsMap[locId].echeances.push(item);
+    groupsMap[locId].totalMontant += item.montant;
+    groupsMap[locId].retardMax = Math.max(groupsMap[locId].retardMax, item.retardJours);
+    if (item.derniereRelance) {
+      if (!groupsMap[locId].derniereRelance
+          || new Date(item.derniereRelance.date) > new Date(groupsMap[locId].derniereRelance.date)) {
+        groupsMap[locId].derniereRelance = item.derniereRelance;
+      }
+    }
+  });
+  const groups = Object.values(groupsMap).sort((a, b) => b.retardMax - a.retardMax);
+  if (!groups.length) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:32px 16px;color:var(--success);font-weight:600;">\u{1F389} Aucun impay\u00e9 group\u00e9 correspondant au filtre.</td></tr>`;
+    return;
+  }
+  const moisNoms = ['','Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+  tbody.innerHTML = groups.map(g => {
+    const { loc, proprio, bien, echeances, totalMontant, retardMax, derniereRelance } = g;
+    const locNom = loc ? getLocataireName(loc) : g.bail.locId;
+    const eLocName = escapeHtml(locNom);
+    const eBienNom = escapeHtml(bien ? bien.designation : g.bail.bienId);
+    const eProprioNom = escapeHtml(proprio ? proprio.nom : '');
+    const eLocId = escapeHtml(g.bail.locId);
+
+    // Liste des \u00e9ch\u00e9ances (mois + montant + retard)
+    const lignesHtml = echeances.map(e => {
+      const retardColor = e.retardJours >= 60 ? 'var(--danger)' : e.retardJours >= 30 ? 'var(--warning)' : 'var(--text-light)';
+      return `<div style="display:inline-flex;align-items:center;gap:6px;padding:3px 8px;margin:2px;border-radius:6px;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.15);font-size:11px;">
+        <span style="font-weight:600;">${moisNoms[e.mois]} ${e.annee}</span>
+        <span style="color:var(--danger);font-weight:700;">${fmt(e.montant)}</span>
+        <span style="color:${retardColor};font-size:10px;">${e.retardJours}j</span>
+      </div>`;
+    }).join('');
+
+    const retardColor = retardMax >= 60 ? 'var(--danger)' : retardMax >= 30 ? 'var(--warning)' : 'var(--text-light)';
+    const retardBg = retardMax >= 60 ? 'rgba(239,68,68,0.12)' : retardMax >= 30 ? 'rgba(245,158,11,0.12)' : 'rgba(0,0,0,0.04)';
+
+    let relanceInfo;
+    if (derniereRelance) {
+      const relDate = new Date(derniereRelance.date);
+      const relDays = Math.floor((Date.now() - relDate.getTime()) / 86400000);
+      relanceInfo = `<div style="font-size:11px;">${relDate.toLocaleDateString('fr-FR', {day:'2-digit',month:'short'})}<div style="font-size:10px;color:var(--text-muted);">il y a ${relDays}j</div></div>`;
+    } else {
+      relanceInfo = '<span style="color:var(--text-muted);font-style:italic;font-size:11px;">Jamais</span>';
+    }
+
+    const hasEmail = loc && loc.email;
+    const btnRelance = hasEmail
+      ? `<button class="btn btn-sm" onclick="envoyerRelanceGroupee('${eLocId}')" style="background:var(--accent-glow);color:var(--accent);border:1px solid rgba(108,92,231,0.25);font-size:11px;padding:5px 10px;">\u2709 Relance group\u00e9e (${echeances.length})</button>`
+      : `<span style="font-size:11px;color:var(--text-muted);font-style:italic;" title="Aucune adresse email">Email \u2717</span>`;
+
+    return `<tr>
+      <td><a href="#" onclick="event.preventDefault();openLocataireFiche('${eLocId}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">${eLocName}</a></td>
+      <td>${eBienNom}</td>
+      <td>${eProprioNom}</td>
+      <td colspan="2" style="padding:6px;">${lignesHtml}</td>
+      <td><span style="background:${retardBg};color:${retardColor};font-weight:700;font-size:12px;padding:3px 10px;border-radius:6px;white-space:nowrap;">${retardMax} j max</span></td>
+      <td class="money" style="color:var(--danger);font-weight:700;">${fmt(totalMontant)}</td>
+      <td>${relanceInfo}</td>
+      <td style="white-space:nowrap;">${btnRelance}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Envoi d'une relance group\u00e9e (un seul email couvrant plusieurs \u00e9ch\u00e9ances)
+function envoyerRelanceGroupee(locId) {
+  if (!isTokenValid()) {
+    if (currentUser) { alert('Session Google expir\u00e9e, reconnexion en cours.'); requestDriveToken(); return; }
+    alert('Session Google expir\u00e9e. Cliquez sur Sync Drive en haut \u00e0 droite pour vous reconnecter.');
+    return;
+  }
+  const all = collectImpayes().filter(x => x.bail.locId === locId);
+  if (!all.length) { alert('Aucun impay\u00e9 pour ce locataire.'); return; }
+  const loc = data.locataires.find(l => l.id === locId);
+  if (!loc || !loc.email) { alert('Ce locataire n\'a pas d\'adresse email renseign\u00e9e.'); return; }
+  const moisNoms = ['','Janvier','F\u00e9vrier','Mars','Avril','Mai','Juin','Juillet','Ao\u00fbt','Septembre','Octobre','Novembre','D\u00e9cembre'];
+  // Construit les lignes texte des \u00e9ch\u00e9ances
+  const lignesEcheances = all.map(x => {
+    return '- ' + moisNoms[x.mois] + ' ' + x.annee + ' : ' + fmt(x.montant) + ' (\u00e9ch\u00e9ance ' + x.dateEcheance.getDate() + '/' + (x.dateEcheance.getMonth()+1) + '/' + x.dateEcheance.getFullYear() + ', retard ' + x.retardJours + ' jours)';
+  }).join('\n');
+  const totalMontant = all.reduce((s, x) => s + x.montant, 0);
+  const bail = all[0].bail;
+  const proprio = all[0].proprio;
+  const bien = all[0].bien;
+
+  const tpl = EMAIL_TEMPLATES.relance_groupee;
+  const vars = {
+    civilite: loc.civilite || '',
+    prenom: loc.prenom || '',
+    nom: loc.nom || '',
+    email: loc.email,
+    bien: bien ? bien.designation : bail.bienId,
+    periode: 'plusieurs \u00e9ch\u00e9ances',
+    loyer: fmt(bail.loyer || 0),
+    charges: '',
+    total: fmt(totalMontant),
+    proprio_nom: (proprio && proprio.nom) || '',
+    date_echeance: '',
+    lignes_impayees: lignesEcheances,
+    nb_echeances: all.length
+  };
+
+  // Pour l'email group\u00e9, on n'attache PAS de PDF (le sujet mentionne qu'il n'y a pas d'\u00e9ch\u00e9ance PDF unique)
+  // On va tout de m\u00eame passer par emailQueue avec un marqueur sp\u00e9cial
+  emailQueue = [{
+    bail, P: proprio || {}, loc, bien,
+    type: 'relance',
+    isGrouped: true,
+    groupedEcheances: all, // pour tracker chaque \u00e9ch\u00e9ance au moment du succ\u00e8s
+    mois: 'groupe', annee: all[0].annee, moisNum: all[0].mois,
+    loyerAppele: 0, chargesAppelees: 0, periodeLabel: 'mensuelle',
+    to: loc.email,
+    sujet: remplirTemplate(tpl.sujet, vars),
+    corps: remplirTemplate(tpl.corps, vars),
+    vars,
+    bailId: bail.id, locId: loc.id
+  }];
+  renderEmailPreview();
+  const emailModal = document.getElementById('modal-email');
+  if (emailModal) emailModal.style.display = 'flex';
 }
 
 // Marque un paiement comme payé (depuis la page impayés)
@@ -6876,12 +7188,20 @@ function renderEmailPreview() {
     html += '<input type="text" id="email-sujet-' + idx + '" value="' + eq.sujet.replace(/"/g,'&quot;') + '" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;"></div>';
     html += '<div><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Message</label>';
     html += '<textarea id="email-corps-' + idx + '" rows="8" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;resize:vertical;line-height:1.5;">' + eq.corps.replace(/</g,'&lt;') + '</textarea></div>';
-    const typeLabel = {quittance:'Quittance',avis:"Avis d'échéance",combine:'Quittance + Avis'}[eq.type]||eq.type;
-    html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(108,92,231,0.04);border-radius:10px;border:1px solid rgba(108,92,231,0.1);">';
-    html += '<div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#EF4444,#F97316);display:flex;align-items:center;justify-content:center;font-size:16px;">📎</div>';
-    html += '<div style="flex:1;"><div style="font-size:12px;font-weight:600;">'+typeLabel+'</div><div style="font-size:11px;color:var(--text-muted);">PDF généré automatiquement</div></div>';
-    html += '<button onclick="previewPdfAttachment('+idx+')" style="padding:6px 14px;border:1px solid var(--accent);border-radius:8px;background:white;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px;">👁 Voir</button>';
-    html += '</div>';
+    const typeLabel = {quittance:'Quittance',avis:"Avis d'échéance",combine:'Quittance + Avis',relance:'Relance'}[eq.type]||eq.type;
+    if (eq.isGrouped) {
+      // Relance group\u00e9e : pas de PDF attach\u00e9
+      html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(245,158,11,0.06);border-radius:10px;border:1px solid rgba(245,158,11,0.2);">';
+      html += '<div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#F59E0B,#FBBF24);display:flex;align-items:center;justify-content:center;font-size:16px;">\u2709</div>';
+      html += '<div style="flex:1;"><div style="font-size:12px;font-weight:600;">Relance group\u00e9e (' + (eq.groupedEcheances ? eq.groupedEcheances.length : '?') + ' \u00e9ch\u00e9ances)</div><div style="font-size:11px;color:var(--text-muted);">Email sans pi\u00e8ce jointe</div></div>';
+      html += '</div>';
+    } else {
+      html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(108,92,231,0.04);border-radius:10px;border:1px solid rgba(108,92,231,0.1);">';
+      html += '<div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#EF4444,#F97316);display:flex;align-items:center;justify-content:center;font-size:16px;">\uD83D\uDCCE</div>';
+      html += '<div style="flex:1;"><div style="font-size:12px;font-weight:600;">'+typeLabel+'</div><div style="font-size:11px;color:var(--text-muted);">PDF g\u00e9n\u00e9r\u00e9 automatiquement</div></div>';
+      html += '<button onclick="previewPdfAttachment('+idx+')" style="padding:6px 14px;border:1px solid var(--accent);border-radius:8px;background:white;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px;">\uD83D\uDC41 Voir</button>';
+      html += '</div>';
+    }
     html += '</div>';
 
     html += '</div></div>';
@@ -6971,14 +7291,11 @@ function wrapBase64(b64, lineLen) {
 }
 
 function buildMimeMessage(to, subject, bodyText, pdfBase64, pdfFilename, cc) {
-  // #38 Guard null/undefined pdfBase64
-  if (!pdfBase64 || typeof pdfBase64 !== 'string') {
-    throw new Error('PDF manquant ou invalide, email non construit');
-  }
   if (!to) throw new Error('Destinataire manquant');
+  const hasPdf = !!(pdfBase64 && typeof pdfBase64 === 'string');
   const boundary = 'boundary_' + Date.now();
   const bodyB64 = wrapBase64(btoa(unescape(encodeURIComponent(bodyText || ''))));
-  const pdfB64Wrapped = wrapBase64(pdfBase64);
+  const pdfB64Wrapped = hasPdf ? wrapBase64(pdfBase64) : '';
   const headers = [
     'MIME-Version: 1.0',
     'To: ' + to
@@ -6989,6 +7306,12 @@ function buildMimeMessage(to, subject, bodyText, pdfBase64, pdfFilename, cc) {
     if (ccList) headers.push('Cc: ' + ccList);
   }
   headers.push('Subject: =?UTF-8?B?' + btoa(unescape(encodeURIComponent(subject || ''))) + '?=');
+  // Si pas de PDF, c'est un message simple (pas multipart/mixed)
+  if (!hasPdf) {
+    headers.push('Content-Type: text/plain; charset="UTF-8"');
+    headers.push('Content-Transfer-Encoding: base64');
+    return headers.join('\r\n') + '\r\n\r\n' + bodyB64;
+  }
   headers.push('Content-Type: multipart/mixed; boundary="' + boundary + '"');
   const lines = headers.concat([
     '',
@@ -7041,20 +7364,25 @@ async function envoyerUnEmail(idx) {
     return false;
   }
 
-  statusEl.textContent = 'G\u00e9n\u00e9ration PDF...';
+  statusEl.textContent = eq.isGrouped ? 'Envoi...' : 'G\u00e9n\u00e9ration PDF...';
   statusEl.style.background = 'rgba(108,92,231,0.1)';
   statusEl.style.color = 'var(--accent)';
 
   try {
-    const pdfResult = genererPDFBlob(eq);
-    if (!pdfResult || !pdfResult.blob) throw new Error('PDF non g\u00e9n\u00e9r\u00e9');
-
-    statusEl.textContent = 'Envoi...';
-    const pdfBase64 = await blobToBase64(pdfResult.blob);
+    // Relance group\u00e9e : pas de PDF attach\u00e9, c'est un simple email texte
+    let pdfBase64 = null;
+    let pdfFilename = null;
+    if (!eq.isGrouped) {
+      const pdfResult = genererPDFBlob(eq);
+      if (!pdfResult || !pdfResult.blob) throw new Error('PDF non g\u00e9n\u00e9r\u00e9');
+      statusEl.textContent = 'Envoi...';
+      pdfBase64 = await blobToBase64(pdfResult.blob);
+      pdfFilename = pdfResult.filename;
+    }
     // Lecture du CC global saisi dans la preview
     const ccInput = document.getElementById('email-cc-global');
     const ccVal = ccInput ? ccInput.value.trim() : (window._emailCcGlobal || '');
-    const mime = buildMimeMessage(to, sujet, corps, pdfBase64, pdfResult.filename, ccVal);
+    const mime = buildMimeMessage(to, sujet, corps, pdfBase64, pdfFilename, ccVal);
 
     // Encode MIME to base64url for Gmail API
     const utf8Bytes = new TextEncoder().encode(mime);
@@ -7081,9 +7409,18 @@ async function envoyerUnEmail(idx) {
     const _eqBien = _eqBail ? data.biens.find(x=>x.id===_eqBail.bienId) : null;
     const _relanceTag = eq.type === 'relance' ? ' [Relance]' : '';
     logActivity({ type: 'email', proprioId: _eqBail?.proprioId||'', locataireId: eq.locId||'', bailId: eq.bailId||'', bienId: _eqBail?.bienId||'', details: 'Email' + _relanceTag + ' envoyé à ' + to + (_eqBien?' ('+_eqBien.designation+')':'') + (_eqLoc?' - '+((_eqLoc.prenom||'')+' '+_eqLoc.nom).trim():'') });
-    // Tracking spécifique relance : on mémorise la date + le destinataire sur le paiement
-    if (eq.type === 'relance' && eq.bailId && eq.moisNum && eq.annee) {
-      try { logRelance(eq.bailId, eq.moisNum, eq.annee, to); } catch(e) { console.error('logRelance error:', e); }
+    // Tracking sp\u00e9cifique relance : on m\u00e9morise la date + le destinataire sur le paiement
+    if (eq.type === 'relance') {
+      try {
+        if (eq.isGrouped && Array.isArray(eq.groupedEcheances)) {
+          // Relance group\u00e9e : logger sur CHAQUE \u00e9ch\u00e9ance du groupe
+          eq.groupedEcheances.forEach(g => {
+            try { logRelance(g.bail.id, g.mois, g.annee, to); } catch(err) { console.error('logRelance grouped error:', err); }
+          });
+        } else if (eq.bailId && eq.moisNum && eq.annee) {
+          logRelance(eq.bailId, eq.moisNum, eq.annee, to);
+        }
+      } catch(e) { console.error('logRelance error:', e); }
     }
     saveData();
     return true;
