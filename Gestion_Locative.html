@@ -1682,10 +1682,15 @@ function openBienFiche(bienId) {
   }
 
   // Historique locataires
-  html += '<div class="card"><div class="card-header"><h3>Locataires (' + baux.length + ' bail' + (baux.length > 1 ? 's' : '') + ')</h3></div>';
+  html += '<div class="card"><div class="card-header"><h3>Locataires (' + baux.length + ' bail' + (baux.length > 1 ? 's' : '') + ')</h3>';
+  html += '<button class="btn btn-success btn-sm" onclick="openModalBailForBien(\'' + bienId + '\')">+ Ajouter un bail</button>';
+  html += '</div>';
   html += '<div class="card-body" style="overflow-x:auto;">';
   if (!baux.length) {
-    html += '<p style="color:var(--text-light);text-align:center;padding:16px;">Aucun bail associ\u00e9.</p>';
+    html += '<div style="text-align:center;padding:24px;">';
+    html += '<p style="color:var(--text-light);margin-bottom:12px;">Aucun bail associ\u00e9.</p>';
+    html += '<button class="btn btn-success" onclick="openModalBailForBien(\'' + bienId + '\')" style="font-size:14px;">+ Ajouter un locataire / bail</button>';
+    html += '</div>';
   } else {
     html += '<table><thead><tr><th>Locataire</th><th>D\u00e9but</th><th>Fin</th><th>Loyer</th><th>Statut</th></tr></thead><tbody>';
     baux.forEach(b => {
@@ -2805,6 +2810,21 @@ function fillBailProprio() {
   document.getElementById('m-ba-proprio-display').value = proprio ? `${proprio.nom} (${proprio.type})` : 'Aucun propriétaire lié';
 }
 
+
+function openModalBailForBien(bienId) {
+  if (!data.locataires.length) {
+    if (confirm('Aucun locataire enregistr\u00e9. Voulez-vous en ajouter un d\'abord ?')) {
+      openModal('locataire');
+    }
+    return;
+  }
+  openModal('bail');
+  // Pre-select the bien in the dropdown
+  setTimeout(() => {
+    const sel = document.getElementById('m-ba-bien');
+    if (sel) { sel.value = bienId; fillBailProprio(); }
+  }, 100);
+}
 
 // ── SAVE ENTITIES ──
 function saveProprio() {
