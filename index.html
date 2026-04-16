@@ -2188,7 +2188,9 @@ function openBienFiche(bienId, pushStateFlag) {
         // Compte dans totaux uniquement si le mois est dans la période du bail ET déjà échu
         if (m <= cm && !isHorsBail) { totalDu += montant; if (paye) totalEnc += montant; }
         const isTrimMonth = isTrim && trimMois.includes(m);
-        const isRelevant = !isTrim || isTrimMonth;
+        // Un mois est pertinent dès qu'il y a un montant dû (loyer seul ou loyer + charges trim)
+        const isRelevant = montant > 0;
+        const border = isTrimMonth ? 'border-left:3px solid var(--warning);' : '';
         let bg, color, icon;
         if (isHorsBail) {
           bg = 'repeating-linear-gradient(45deg,rgba(0,0,0,0.03),rgba(0,0,0,0.03) 3px,rgba(0,0,0,0.06) 3px,rgba(0,0,0,0.06) 6px)';
@@ -2201,10 +2203,13 @@ function openBienFiche(bienId, pushStateFlag) {
           color = paye ? 'var(--success)' : 'var(--danger)';
           icon = paye ? '\u2713' : '\u2717';
         }
-        const ttl = isHorsBail ? ' title="Hors période du bail"' : '';
-        html += '<div' + ttl + ' style="text-align:center;padding:4px 6px;border-radius:8px;background:' + bg + ';min-width:48px;">';
+        const ttl = isHorsBail ? ' title="Hors période du bail"'
+                   : (isTrimMonth ? ' title="Loyer + charges trimestrielles"' : '');
+        html += '<div' + ttl + ' style="text-align:center;padding:4px 6px;border-radius:8px;background:' + bg + ';min-width:48px;' + border + '">';
         html += '<div style="font-size:9px;color:var(--text-light);font-weight:600;">' + moisNoms[m] + '</div>';
         html += '<div style="color:' + color + ';font-weight:700;font-size:13px;">' + icon + '</div>';
+        if (isRelevant && !isHorsBail) html += '<div style="font-size:8px;color:var(--text-light);">' + fmt(montant) + '</div>';
+        if (isTrimMonth && !isHorsBail) html += '<div style="font-size:7px;color:var(--warning);font-weight:700;margin-top:1px;">+CHARGES</div>';
         html += '</div>';
       }
       html += '</div></div>';
@@ -2525,7 +2530,9 @@ function openLocataireFiche(locId, pushStateFlag) {
           const paye = statut === 'paye';
           const montant = getMoisTotal(bail, m);
           const isTrimMonth = isTrim && trimMois.includes(m);
-          const isRelevant = !isTrim || isTrimMonth;
+          // Le loyer est dû tous les mois même sur un bail avec charges trimestrielles.
+          // Seuls les baux sans loyer (bail.loyer === 0) et sans charges du mois deviennent "non pertinents".
+          const isRelevant = montant > 0;
           const isHorsBail = !isBailActifPourMois(bail, m, annee);
           let bg, color, icon, clickable, onclick, border, tooltip = '';
           if (isHorsBail) {
@@ -2543,11 +2550,13 @@ function openLocataireFiche(locId, pushStateFlag) {
             icon = paye ? '\u2713' : (isRelevant ? '\u2717' : '\u2014');
             clickable = isRelevant ? 'cursor:pointer;' : '';
             onclick = isRelevant ? ' onclick="togglePaiementFiche(\'' + bail.id + '\',' + m + ',' + annee + ',\'' + locId + '\')"' : '';
+            if (isTrimMonth) tooltip = ' title="Loyer + charges trimestrielles"';
           }
           html += '<div' + tooltip + ' style="text-align:center;padding:4px 6px;border-radius:4px;background:' + bg + ';min-width:48px;' + border + clickable + '"' + onclick + '>';
           html += '<div style="font-size:9px;color:var(--text-light);font-weight:600;">' + moisNoms[m] + '</div>';
           html += '<div style="color:' + color + ';font-weight:700;font-size:13px;">' + icon + '</div>';
           if (isRelevant && !isHorsBail) html += '<div style="font-size:8px;color:var(--text-light);">' + fmt(montant) + '</div>';
+          if (isTrimMonth && !isHorsBail) html += '<div style="font-size:7px;color:var(--warning);font-weight:700;margin-top:1px;">+CHARGES</div>';
           html += '</div>';
         }
         html += '</div></div>';
