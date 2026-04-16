@@ -712,7 +712,8 @@ input, select, textarea {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
       Locataires <span class="badge" id="badge-locataires">0</span>
     </div>
-    <div class="nav-item" data-page="baux">
+    <!-- Onglet Baux fusionn\u00e9 dans Locataires. La page reste accessible via un bouton sur la page Locataires. -->
+    <div class="nav-item" data-page="baux" style="display:none;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       Baux <span class="badge" id="badge-baux">0</span>
     </div>
@@ -842,9 +843,30 @@ input, select, textarea {
 <!-- LOCATAIRES -->
 <div class="page" id="page-locataires">
   <div class="card">
-    <div class="card-header"><h3>Liste des locataires</h3><button class="btn btn-primary btn-sm" onclick="openModal('locataire')">+ Ajouter un locataire</button></div>
+    <div class="card-header">
+      <h3>Locataires &amp; baux</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <button class="btn btn-outline btn-sm" onclick="navigateTo('baux')" title="Voir la liste exhaustive des baux (y compris r\u00e9sili\u00e9s)">Vue baux complets</button>
+        <button class="btn btn-primary btn-sm" onclick="openModal('locataire')">+ Ajouter un locataire</button>
+        <button class="btn btn-primary btn-sm" onclick="openModal('bail')" style="background:#6C5CE7;">+ Ajouter un bail</button>
+      </div>
+    </div>
     <div class="card-body" style="overflow-x:auto;">
-      <table id="table-locataires"><thead><tr><th>ID</th><th>Civilité</th><th>Nom</th><th>Prénom</th><th>Adresse</th><th>Téléphone</th><th>Email</th><th>Actions</th></tr></thead><tbody></tbody></table>
+      <table id="table-locataires">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Locataire</th>
+            <th>Coordonnées</th>
+            <th>Bien loué</th>
+            <th class="money">Loyer</th>
+            <th>Période</th>
+            <th>Statut bail</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -3048,14 +3070,28 @@ function renderBiens() {
   }).join('');
 }
 
+// \u00c9tat des expanders locataires (pour historique baux) — persistant \u00e0 travers les re-renders
+const _locatairesExpanded = new Set();
+function toggleLocataireBauxExpander(locId) {
+  if (_locatairesExpanded.has(locId)) _locatairesExpanded.delete(locId);
+  else _locatairesExpanded.add(locId);
+  renderLocataires();
+}
+
 function renderLocataires() {
   const tb = document.querySelector('#table-locataires tbody');
+  if (!tb) return;
   const filtered = getFilteredLocataires();
   const societeCiv = ['Société','SCI','SARL','SAS','EURL','SASU'];
+  if (!filtered.length) {
+    tb.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-light);">Aucun locataire. Cliquez sur "+ Ajouter un locataire" pour commencer.</td></tr>';
+    return;
+  }
+
   tb.innerHTML = filtered.map((l) => {
     const i = data.locataires.indexOf(l);
     const isSoc = (l.type === 'Société') || (!l.type && societeCiv.includes(l.civilite));
-    // #2 XSS : toutes les données user échappées
+    // #2/#41 XSS : \u00e9chappement
     const eId = escapeHtml(l.id);
     const eCiv = escapeHtml(l.civilite || '');
     const eNom = escapeHtml(l.nom || '');
@@ -3066,44 +3102,131 @@ function renderLocataires() {
     const eVille = escapeHtml(l.ville || '');
     const eTel = escapeHtml(l.tel || '');
     const eEmail = escapeHtml(l.email || '');
-    const civCell = isSoc
-      ? `<span class="proprio-tag societe" style="font-size:11px;">${eCiv || 'Société'}</span>`
-      : eCiv;
-    const nomCell = `<a href="#" onclick="event.preventDefault();openLocataireFiche('${eId}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">${eNom}</a>`
-      + (isSoc && l.siret ? `<div style="font-size:11px;color:var(--text-muted);font-weight:400;margin-top:2px;">SIRET ${eSiret}</div>` : '');
-    let prenomCell;
+
+    // Baux de ce locataire
+    const bauxLoc = data.baux.filter(b => b.locId === l.id);
+    const bauxActifs = bauxLoc.filter(b => b.statut === 'Actif');
+    const bauxHisto = bauxLoc.filter(b => b.statut !== 'Actif');
+    const bailPrincipal = bauxActifs[0] || null; // 1er bail actif (cas majoritaire : 1 seul)
+    const multipleActifs = bauxActifs.length > 1;
+
+    // Cellule 1 : Locataire (nom + type)
+    const civTag = isSoc
+      ? `<span class="proprio-tag societe" style="font-size:10px;">${eCiv || 'Société'}</span>`
+      : `<span style="font-size:11px;color:var(--text-muted);">${eCiv}</span>`;
+    let locateurHeader;
     if (isSoc) {
       const rp = (l.representantPrenom || '').trim();
       const rn = (l.representantNom || '').trim();
-      const rf = (l.representantFonction || '').trim();
       const reprNom = (rp + ' ' + rn).trim();
       const eReprNom = escapeHtml(reprNom);
-      const eRf = escapeHtml(rf);
-      if (reprNom || rf) {
-        const reprLink = reprNom
-          ? `<a href="#" onclick="event.preventDefault();openLocataireFiche('${eId}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;font-size:13px;">${eReprNom}</a>`
-          : `<span style="font-size:13px;color:var(--text-muted);">—</span>`;
-        prenomCell = reprLink
-          + (rf ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${eRf}</div>` : '');
-      } else {
-        prenomCell = `<a href="#" onclick="event.preventDefault();openLocataireFiche('${eId}')" style="color:var(--text-muted);font-style:italic;font-size:12px;text-decoration:none;cursor:pointer;" title="Ouvrir la fiche pour ajouter un représentant">Pas de représentant</a>`;
-      }
+      locateurHeader = `<div style="font-weight:600;"><a href="#" onclick="event.preventDefault();openLocataireFiche('${eId}')" style="color:var(--accent);text-decoration:none;">${eNom}</a></div>`
+        + `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${civTag}${reprNom ? ' · ' + eReprNom : ''}</div>`
+        + (l.siret ? `<div style="font-size:10px;color:var(--text-muted);">SIRET ${eSiret}</div>` : '');
     } else {
-      prenomCell = `<a href="#" onclick="event.preventDefault();openLocataireFiche('${eId}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">${ePrenom}</a>`;
+      const fullName = [ePrenom, eNom].filter(Boolean).join(' ');
+      locateurHeader = `<div style="font-weight:600;"><a href="#" onclick="event.preventDefault();openLocataireFiche('${eId}')" style="color:var(--accent);text-decoration:none;">${fullName || '(sans nom)'}</a></div>`
+        + `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${civTag}</div>`;
     }
-    return `<tr>
-      <td>${eId}</td><td>${civCell}</td>
-      <td>${nomCell}</td>
-      <td>${prenomCell}</td>
-      <td>${eAdresse}${(l.cp||l.ville)?', ':''}${eCp} ${eVille}</td><td>${eTel}</td><td>${eEmail}</td>
-      <td style="white-space:nowrap;"><button class="btn btn-sm" style="background:var(--accent);color:white;margin-right:4px;" onclick="openLocataireFiche('${eId}')">Voir</button><button class="btn btn-danger btn-sm" onclick="deleteLocataire(${i})">Suppr.</button></td>
+
+    // Cellule 2 : Coordonn\u00e9es
+    const coordCell = [
+      eTel ? `<div style="font-size:12px;">${eTel}</div>` : '',
+      eEmail ? `<div style="font-size:11px;color:var(--text-muted);"><a href="mailto:${eEmail}" style="color:var(--text-muted);">${eEmail}</a></div>` : '',
+      eAdresse ? `<div style="font-size:10px;color:var(--text-muted);margin-top:3px;">${eAdresse}${(l.cp||l.ville)?', ':''}${eCp} ${eVille}</div>` : ''
+    ].filter(Boolean).join('') || '<span style="color:var(--text-muted);font-style:italic;font-size:11px;">Pas de coordonn\u00e9es</span>';
+
+    // Cellules 3-6 : Bien + Loyer + P\u00e9riode + Statut (bail actif principal)
+    let bienCell, loyerCell, periodeCell, statutCell;
+    if (bailPrincipal) {
+      const bien = data.biens.find(x => x.id === bailPrincipal.bienId);
+      const eBienNom = escapeHtml(bien ? bien.designation || '' : bailPrincipal.bienId);
+      const eBienId = escapeHtml(bailPrincipal.bienId);
+      bienCell = `<a href="#" onclick="event.preventDefault();openBienFiche('${eBienId}')" style="color:var(--accent);font-weight:500;text-decoration:none;">${eBienNom}</a>`
+        + (multipleActifs ? `<div style="font-size:10px;color:var(--warning);margin-top:2px;">+${bauxActifs.length - 1} autre(s)</div>` : '');
+
+      const mp = getMontantsPeriode(bailPrincipal, 1); // juste pour avoir le loyerAppele
+      const periLoyer = getPeriodiciteLoyer(bailPrincipal);
+      const loyerUnit = periLoyer === 'trimestrielle' ? '/trim.' : '/mois';
+      const loyerBase = periLoyer === 'trimestrielle' ? (bailPrincipal.loyer || 0) * 3 : (bailPrincipal.loyer || 0);
+      const chargesBase = bailPrincipal.periodiciteCharges === 'trimestrielle'
+        ? (bailPrincipal.chargesTrimestrielles || 0)
+        : (bailPrincipal.charges || 0) * (periLoyer === 'trimestrielle' ? 3 : 1);
+      loyerCell = `<div style="font-weight:600;">${fmt(loyerBase)}<span style="font-size:10px;color:var(--text-muted);font-weight:400;"> ${loyerUnit}</span></div>`
+        + (chargesBase > 0 ? `<div style="font-size:10px;color:var(--text-muted);">+ ${fmt(chargesBase)} charges</div>` : '');
+
+      periodeCell = `<div style="font-size:12px;">${fmtDate(bailPrincipal.debut) || '?'}</div>`
+        + `<div style="font-size:10px;color:var(--text-muted);">→ ${fmtDate(bailPrincipal.fin) || 'sans fin'}</div>`;
+
+      const statutClass = bailPrincipal.statut === 'Actif' ? 'active' : '';
+      statutCell = `<span class="status status-${statutClass}">${escapeHtml(bailPrincipal.statut)}</span>`;
+    } else if (bauxHisto.length) {
+      bienCell = `<span style="color:var(--text-muted);font-style:italic;font-size:12px;">Aucun bail actif</span>`;
+      loyerCell = '—';
+      periodeCell = '—';
+      statutCell = `<span style="font-size:11px;color:var(--text-muted);">Historique : ${bauxHisto.length}</span>`;
+    } else {
+      bienCell = `<span style="color:var(--text-muted);font-style:italic;font-size:12px;">Pas encore de bail</span>`;
+      loyerCell = '—';
+      periodeCell = '—';
+      statutCell = '—';
+    }
+
+    // Actions
+    const hasHisto = bauxLoc.length > 0;
+    const expanded = _locatairesExpanded.has(l.id);
+    const expandBtn = hasHisto
+      ? `<button class="btn btn-sm" onclick="toggleLocataireBauxExpander('${eId}')" title="${expanded ? 'Masquer' : 'Voir'} tous les baux de ce locataire" style="background:#f5f5f5;color:var(--text-light);border:1px solid var(--border);font-size:11px;padding:5px 10px;">${expanded ? '▲' : '▼'} ${bauxLoc.length}</button>`
+      : '';
+    const actionsCell = `<div style="white-space:nowrap;display:flex;gap:4px;flex-wrap:wrap;">
+      ${expandBtn}
+      <button class="btn btn-sm" style="background:var(--accent);color:white;" onclick="openLocataireFiche('${eId}')">Fiche</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteLocataire('${eId}')">Suppr.</button>
+    </div>`;
+
+    let row = `<tr>
+      <td style="vertical-align:top;">${hasHisto ? `<button onclick="toggleLocataireBauxExpander('${eId}')" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:0;">${expanded ? '▾' : '▸'}</button>` : ''}</td>
+      <td style="vertical-align:top;">${locateurHeader}</td>
+      <td style="vertical-align:top;">${coordCell}</td>
+      <td style="vertical-align:top;">${bienCell}</td>
+      <td class="money" style="vertical-align:top;">${loyerCell}</td>
+      <td style="vertical-align:top;">${periodeCell}</td>
+      <td style="vertical-align:top;">${statutCell}</td>
+      <td style="vertical-align:top;">${actionsCell}</td>
     </tr>`;
+
+    // Ligne d\u00e9pli\u00e9e : historique des baux
+    if (expanded && hasHisto) {
+      const bauxRows = bauxLoc.map(b => {
+        const bien = data.biens.find(x => x.id === b.bienId);
+        const eBienId = escapeHtml(b.bienId);
+        const eBienNom = escapeHtml(bien ? bien.designation || '' : b.bienId);
+        const eBailId = escapeHtml(b.id);
+        const eStatut = escapeHtml(b.statut || '');
+        const isActif = b.statut === 'Actif';
+        const statutBg = isActif ? 'rgba(0,179,126,0.1)' : 'rgba(0,0,0,0.04)';
+        const statutColor = isActif ? 'var(--success)' : 'var(--text-muted)';
+        const periLoyer = getPeriodiciteLoyer(b);
+        const loyerBase = periLoyer === 'trimestrielle' ? (b.loyer||0)*3 : (b.loyer||0);
+        const loyerLabel = periLoyer === 'trimestrielle' ? '/trim.' : '/mois';
+        return `<tr style="background:rgba(108,92,231,0.03);">
+          <td></td>
+          <td colspan="7" style="padding:8px 12px;">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px;">
+              <span style="font-weight:600;color:var(--primary);">${eBailId}</span>
+              <a href="#" onclick="event.preventDefault();openBienFiche('${eBienId}')" style="color:var(--accent);text-decoration:none;">${eBienNom}</a>
+              <span style="color:var(--text-muted);">${fmtDate(b.debut) || '?'} → ${fmtDate(b.fin) || 'sans fin'}</span>
+              <span style="font-weight:600;">${fmt(loyerBase)} ${loyerLabel}</span>
+              <span style="padding:2px 8px;border-radius:6px;background:${statutBg};color:${statutColor};font-size:11px;font-weight:600;">${eStatut}</span>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+      row += bauxRows;
+    }
+
+    return row;
   }).join('');
-  // Adapter l'en-tête de la colonne "Prénom" pour refléter son double rôle
-  const headers = document.querySelectorAll('#table-locataires thead th');
-  if (headers.length >= 4 && headers[3] && headers[3].textContent.trim() === 'Prénom') {
-    headers[3].textContent = 'Prénom / Représentant';
-  }
 }
 
 function renderBaux() {
