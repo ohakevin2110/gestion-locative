@@ -925,7 +925,7 @@ input, select, textarea {
 
 <script>
 // ── DATA ──
-let data = { proprios: [], biens: [], locataires: [], baux: [], paiements: [] };
+let data = { proprios: [], biens: [], locataires: [], baux: [], paiements: [], historique: [] };
 
 // Données de simulation pré-remplies
 const DEMO_DATA = {
@@ -986,6 +986,22 @@ function getStorageKey() {
 function saveData() {
   try { localStorage.setItem(getStorageKey(), JSON.stringify(data)); } catch(e) {}
 }
+function logActivity(opts) {
+  // opts: { type, proprioId, locataireId, bailId, bienId, details }
+  if (!data.historique) data.historique = [];
+  data.historique.push({
+    id: 'H' + Date.now(),
+    date: new Date().toISOString(),
+    type: opts.type || '',
+    proprioId: opts.proprioId || '',
+    locataireId: opts.locataireId || '',
+    bailId: opts.bailId || '',
+    bienId: opts.bienId || '',
+    details: opts.details || ''
+  });
+  // Keep max 500 entries
+  if (data.historique.length > 500) data.historique = data.historique.slice(-500);
+}
 function loadData() {
   let loaded = false;
   const key = getStorageKey();
@@ -1039,6 +1055,7 @@ function loadData() {
     }
     delete b.chargesAnnuelles;
   });
+  if (!data.historique) { data.historique = []; migrated = true; }
   if (migrated) saveData();
   refreshAll();
 }
@@ -1895,6 +1912,12 @@ function togglePaiementFiche(bailId, mois, annee, locId) {
   } else {
     data.paiements.push({ bailId, mois, annee, statut: 'paye' });
   }
+  const _bail = data.baux.find(x=>x.id===bailId);
+  const _loc = data.locataires.find(x=>x.id===locId);
+  const _bien = _bail ? data.biens.find(x=>x.id===_bail.bienId) : null;
+  const _newStatut = idx >= 0 ? data.paiements[idx].statut : 'paye';
+  const moisNomsCourt = ['','Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+  logActivity({ type: 'paiement', proprioId: _bail?.proprioId||'', locataireId: locId, bailId, bienId: _bail?.bienId||'', details: 'Paiement ' + moisNomsCourt[mois] + ' ' + annee + ' → ' + (_newStatut==='paye'?'Payé':'Impayé') + (_bien?' ('+_bien.designation+')':'') + (_loc?' - '+((_loc.prenom||'')+' '+_loc.nom).trim():'') });
   saveData();
   openLocataireFiche(locId); // refresh fiche only
 }
@@ -2100,6 +2123,37 @@ function openLocataireFiche(locId) {
     </div>
   </div>`;
 
+  // ── Historique d'activité ──
+  const locHisto = (data.historique || []).filter(h => h.locataireId === locId).sort((a,b) => b.date.localeCompare(a.date));
+  html += `<div class="card" style="margin-top:16px;">
+    <div class="card-header" style="background:linear-gradient(135deg,#2d3436,#636e72);">
+      <h3 style="color:white;font-size:16px;">📋 Historique d'activité</h3>
+    </div>
+    <div class="card-body">`;
+  if (locHisto.length === 0) {
+    html += '<p style="color:var(--text-light);text-align:center;padding:20px;">Aucune activité enregistrée</p>';
+  } else {
+    html += '<div style="max-height:400px;overflow-y:auto;">';
+    locHisto.forEach(h => {
+      const dt = new Date(h.date);
+      const dateStr = dt.toLocaleDateString('fr-FR') + ' à ' + dt.toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'});
+      let icon = '📄', color = 'var(--accent)';
+      if (h.type === 'paiement') { icon = '💰'; color = 'var(--success)'; }
+      else if (h.type === 'email') { icon = '✉️'; color = '#6C5CE7'; }
+      else if (h.type === 'document') { icon = '📄'; color = '#e17055'; }
+      else if (h.type === 'bail') { icon = '📝'; color = '#00b894'; }
+      html += `<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);">
+        <span style="font-size:20px;flex-shrink:0;">${icon}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;color:${color};">${h.details || h.type}</div>
+          <div style="font-size:11px;color:var(--text-light);margin-top:2px;">${dateStr}</div>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+  html += '</div></div>';
+
   document.getElementById('fiche-locataire-content').innerHTML = html;
 
   // Pre-select current month
@@ -2271,9 +2325,42 @@ function renderProprios() {
       <td>${p.id}</td><td>${tag}</td><td><strong>${p.nom}</strong></td>
       <td>${p.adresse||''}</td><td>${p.cp||''} ${p.ville||''}</td>
       <td>${p.siret||'-'}</td><td>${p.email||''}</td>
-      <td style="white-space:nowrap;"><button class="btn btn-sm" style="background:var(--accent);color:white;margin-right:4px;" onclick="editProprio(${i})">Modifier</button><button class="btn btn-danger btn-sm" onclick="deleteProprio(${i})">Suppr.</button></td>
+      <td style="white-space:nowrap;"><button class="btn btn-sm" style="background:var(--accent);color:white;margin-right:4px;" onclick="editProprio(${i})">Modifier</button><button class="btn btn-sm" style="background:#2d3436;color:white;margin-right:4px;" onclick="openProprioHistorique('${p.id}')">Historique</button><button class="btn btn-danger btn-sm" onclick="deleteProprio(${i})">Suppr.</button></td>
     </tr>`;
   }).join('') || '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-light)">Aucun propriétaire. Cliquez sur "+ Ajouter" pour commencer.</td></tr>';
+}
+
+function openProprioHistorique(proprioId) {
+  const proprio = data.proprios.find(x => x.id === proprioId);
+  if (!proprio) return;
+  const histo = (data.historique || []).filter(h => h.proprioId === proprioId).sort((a,b) => b.date.localeCompare(a.date));
+  let html = '<div class="card"><div class="card-header" style="background:linear-gradient(135deg,#2d3436,#636e72);"><h3 style="color:white;font-size:16px;">📋 Historique — ' + (proprio.nom||'Propriétaire') + '</h3></div><div class="card-body">';
+  if (histo.length === 0) {
+    html += '<p style="color:var(--text-light);text-align:center;padding:20px;">Aucune activité enregistrée pour ce propriétaire</p>';
+  } else {
+    html += '<div style="max-height:500px;overflow-y:auto;">';
+    histo.forEach(h => {
+      const dt = new Date(h.date);
+      const dateStr = dt.toLocaleDateString('fr-FR') + ' à ' + dt.toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'});
+      let icon = '📄', color = 'var(--accent)';
+      if (h.type === 'paiement') { icon = '💰'; color = 'var(--success)'; }
+      else if (h.type === 'email') { icon = '✉️'; color = '#6C5CE7'; }
+      else if (h.type === 'document') { icon = '📄'; color = '#e17055'; }
+      else if (h.type === 'bail') { icon = '📝'; color = '#00b894'; }
+      html += '<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);"><span style="font-size:20px;flex-shrink:0;">' + icon + '</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:' + color + ';">' + (h.details || h.type) + '</div><div style="font-size:11px;color:var(--text-light);margin-top:2px;">' + dateStr + '</div></div></div>';
+    });
+    html += '</div>';
+  }
+  html += '</div></div>';
+  // Show in a modal
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.onclick = function(e) { if (e.target === modal) document.body.removeChild(modal); };
+  const inner = document.createElement('div');
+  inner.style.cssText = 'background:var(--white);border-radius:16px;max-width:600px;width:100%;max-height:80vh;overflow-y:auto;box-shadow:0 25px 50px rgba(0,0,0,0.3);';
+  inner.innerHTML = html + '<div style="padding:16px;text-align:right;"><button class="btn btn-sm" style="background:var(--border);color:var(--text);" onclick="this.closest(\'div[style*=fixed]\').remove()">Fermer</button></div>';
+  modal.appendChild(inner);
+  document.body.appendChild(modal);
 }
 
 function renderBiens() {
@@ -2367,6 +2454,12 @@ function togglePaiement(bailId, mois, annee) {
   } else {
     data.paiements.push({ bailId, mois, annee, statut: 'paye' });
   }
+  const _bail2 = data.baux.find(x=>x.id===bailId);
+  const _loc2 = _bail2 ? data.locataires.find(x=>x.id===_bail2.locId) : null;
+  const _bien2 = _bail2 ? data.biens.find(x=>x.id===_bail2.bienId) : null;
+  const _newStatut2 = idx >= 0 ? data.paiements[idx].statut : 'paye';
+  const _moisC = ['','Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+  logActivity({ type: 'paiement', proprioId: _bail2?.proprioId||'', locataireId: _bail2?.locId||'', bailId, bienId: _bail2?.bienId||'', details: 'Paiement ' + _moisC[mois] + ' ' + annee + ' → ' + (_newStatut2==='paye'?'Payé':'Impayé') + (_bien2?' ('+_bien2.designation+')':'') + (_loc2?' - '+((_loc2.prenom||'')+' '+_loc2.nom).trim():'') });
   saveData(); renderPaiements(); renderDashboard();
 }
 
@@ -3359,6 +3452,10 @@ function saveBail() {
     depot: parseFloat(gv('m-ba-depot'))||0, jourEcheance: parseInt(gv('m-ba-jour'))||1,
     statut: gv('m-ba-statut')
   });
+  const _newBail = data.baux[data.baux.length - 1];
+  const _bailLoc = data.locataires.find(x=>x.id===_newBail.locId);
+  const _bailBien = data.biens.find(x=>x.id===_newBail.bienId);
+  logActivity({ type: 'bail', proprioId: _newBail.proprioId, locataireId: _newBail.locId, bailId: _newBail.id, bienId: _newBail.bienId, details: 'Bail créé' + (_bailBien?' ('+_bailBien.designation+')':'') + (_bailLoc?' - '+((_bailLoc.prenom||'')+' '+_bailLoc.nom).trim():'') + ' du ' + (_newBail.debut||'?') + ' au ' + (_newBail.fin||'?') });
   saveData(); refreshAll(); closeModal();
   // If we came from a bien fiche, re-open it to refresh rendements
   if (window._openBienFicheAfterSave) {
@@ -3500,6 +3597,9 @@ function genererDocuments() {
       genCombinePDF(bail, P, prevMoisNom, prevAnneeVal, prevMoisNum, qLoyer, qCharges, prevPaye, mois, parseInt(annee), moisNum, chargesAppelees, loyerAppele, periodeLabel);
     }
     count++;
+    const _locDoc = data.locataires.find(x=>x.id===bail.locId);
+    const _bienDoc = data.biens.find(x=>x.id===bail.bienId);
+    logActivity({ type: 'document', proprioId: bail.proprioId, locataireId: bail.locId, bailId: bail.id, bienId: bail.bienId, details: (type==='quittance'?'Quittance':type==='avis'?'Avis d\'échéance':'Quittance + Avis') + ' ' + mois + ' ' + annee + ' généré(e)' + (_bienDoc?' ('+_bienDoc.designation+')':'') + (_locDoc?' - '+((_locDoc.prenom||'')+' '+_locDoc.nom).trim():'') });
   });
 
   const typeLabels = {quittance:'quittance(s)',avis:"avis d'\u00e9ch\u00e9ance",combine:'document(s) combin\u00e9(s) (quittance + avis)'};
@@ -4406,7 +4506,7 @@ function handleLogout() {
   try { localStorage.removeItem('gl_user'); } catch(e) {}
 
   // Reset data
-  data = { proprios: [], biens: [], locataires: [], baux: [], paiements: [] };
+  data = { proprios: [], biens: [], locataires: [], baux: [], paiements: [], historique: [] };
 
   // Show login
   showLogin();
@@ -4659,6 +4759,9 @@ async function genererDocumentsDrive() {
       const folderId = await gdriveEnsureFolderPath(folderPath);
       await gdriveUploadPDF(pdfResult.blob, pdfResult.filename, folderId);
       count++;
+      const _docLoc = data.locataires.find(x=>x.id===bail.locId);
+      const _docBien = data.biens.find(x=>x.id===bail.bienId);
+      logActivity({ type: 'document', proprioId: bail.proprioId, locataireId: bail.locId, bailId: bail.id, bienId: bail.bienId, details: (type==='quittance'?'Quittance':type==='avis'?'Avis d\'échéance':'Quittance + Avis') + ' ' + mois + ' ' + annee + ' archivé(e) sur Drive' + (_docBien?' ('+_docBien.designation+')':'') + (_docLoc?' - '+((_docLoc.prenom||'')+' '+_docLoc.nom).trim():'') });
     } catch (e) {
       console.error('Erreur archivage Drive:', e);
       errors++;
@@ -5040,6 +5143,11 @@ async function envoyerUnEmail(idx) {
     statusEl.textContent = '\u2713 Envoy\u00e9';
     statusEl.style.background = 'rgba(16,185,129,0.1)';
     statusEl.style.color = 'var(--success)';
+    const _eqBail = data.baux.find(x=>x.id===eq.bailId);
+    const _eqLoc = data.locataires.find(x=>x.id===eq.locId);
+    const _eqBien = _eqBail ? data.biens.find(x=>x.id===_eqBail.bienId) : null;
+    logActivity({ type: 'email', proprioId: _eqBail?.proprioId||'', locataireId: eq.locId||'', bailId: eq.bailId||'', bienId: _eqBail?.bienId||'', details: 'Email envoyé à ' + to + (_eqBien?' ('+_eqBien.designation+')':'') + (_eqLoc?' - '+((_eqLoc.prenom||'')+' '+_eqLoc.nom).trim():'') });
+    saveData();
     return true;
   } catch(e) {
     console.error('Email error:', e);
