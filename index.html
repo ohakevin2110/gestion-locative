@@ -2897,13 +2897,46 @@ function renderBiens() {
 function renderLocataires() {
   const tb = document.querySelector('#table-locataires tbody');
   const filtered = getFilteredLocataires();
-  tb.innerHTML = filtered.map((l) => { const i = data.locataires.indexOf(l); return `<tr>
-    <td>${l.id}</td><td>${l.civilite}</td>
-    <td><a href="#" onclick="event.preventDefault();openLocataireFiche('${l.id}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">${l.nom}</a></td>
-    <td><a href="#" onclick="event.preventDefault();openLocataireFiche('${l.id}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">${l.prenom}</a></td>
-    <td>${l.adresse}, ${l.cp} ${l.ville}</td><td>${l.tel}</td><td>${l.email}</td>
-    <td style="white-space:nowrap;"><button class="btn btn-sm" style="background:var(--accent);color:white;margin-right:4px;" onclick="openLocataireFiche('${l.id}')">Voir</button><button class="btn btn-danger btn-sm" onclick="deleteLocataire(${i})">Suppr.</button></td>
-  </tr>`; }).join('');
+  const societeCiv = ['Société','SCI','SARL','SAS','EURL','SASU'];
+  tb.innerHTML = filtered.map((l) => {
+    const i = data.locataires.indexOf(l);
+    const isSoc = (l.type === 'Société') || (!l.type && societeCiv.includes(l.civilite));
+    // Colonne 1 (après ID) : civilité ou forme juridique + badge Société
+    const civCell = isSoc
+      ? `<span class="proprio-tag societe" style="font-size:11px;">${l.civilite || 'Société'}</span>`
+      : (l.civilite || '');
+    // Colonne Nom
+    const nomCell = `<a href="#" onclick="event.preventDefault();openLocataireFiche('${l.id}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">${l.nom || ''}</a>`
+      + (isSoc && l.siret ? `<div style="font-size:11px;color:var(--text-muted);font-weight:400;margin-top:2px;">SIRET ${l.siret}</div>` : '');
+    // Colonne Prénom : pour les sociétés on affiche le représentant
+    let prenomCell;
+    if (isSoc) {
+      const rp = (l.representantPrenom || '').trim();
+      const rn = (l.representantNom || '').trim();
+      const rf = (l.representantFonction || '').trim();
+      const reprNom = (rp + ' ' + rn).trim();
+      if (reprNom || rf) {
+        prenomCell = `<div style="font-size:13px;">${reprNom || '—'}</div>`
+          + (rf ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${rf}</div>` : '');
+      } else {
+        prenomCell = `<span style="color:var(--text-muted);font-style:italic;font-size:12px;">Pas de représentant</span>`;
+      }
+    } else {
+      prenomCell = `<a href="#" onclick="event.preventDefault();openLocataireFiche('${l.id}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">${l.prenom || ''}</a>`;
+    }
+    return `<tr>
+      <td>${l.id}</td><td>${civCell}</td>
+      <td>${nomCell}</td>
+      <td>${prenomCell}</td>
+      <td>${l.adresse || ''}${(l.cp||l.ville)?', ':''}${l.cp || ''} ${l.ville || ''}</td><td>${l.tel || ''}</td><td>${l.email || ''}</td>
+      <td style="white-space:nowrap;"><button class="btn btn-sm" style="background:var(--accent);color:white;margin-right:4px;" onclick="openLocataireFiche('${l.id}')">Voir</button><button class="btn btn-danger btn-sm" onclick="deleteLocataire(${i})">Suppr.</button></td>
+    </tr>`;
+  }).join('');
+  // Adapter l'en-tête de la colonne "Prénom" pour refléter son double rôle
+  const headers = document.querySelectorAll('#table-locataires thead th');
+  if (headers.length >= 4 && headers[3] && headers[3].textContent.trim() === 'Prénom') {
+    headers[3].textContent = 'Prénom / Représentant';
+  }
 }
 
 function renderBaux() {
