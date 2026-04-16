@@ -797,7 +797,7 @@ input, select, textarea {
 
   <div class="card">
     <div class="card-header"><h3>Impay&eacute;s en cours</h3></div>
-    <div class="card-body" style="overflow-x:auto;"><table id="table-impayes"><thead><tr><th>Locataire</th><th>Bien</th><th>Propriétaire</th><th>Période</th><th>Montant dû</th><th>Statut</th></tr></thead><tbody></tbody></table></div>
+    <div class="card-body" style="overflow-x:auto;"><table id="table-impayes"><thead><tr><th>Locataire</th><th>Bien</th><th>Propriétaire</th><th>Période</th><th>Montant dû</th><th>Statut</th><th>Relance</th></tr></thead><tbody></tbody></table></div>
   </div>
   <div class="card">
     <div class="card-header">
@@ -3284,16 +3284,32 @@ function renderDashboard() {
       if (!isBailActifPourMois(b, m, cy)) continue;
       if (getPaiementStatut(b.id, m, cy) !== 'paye') {
         const montant = getMoisTotal(b, m);
+        const derniereRelance = getDerniereRelance(b.id, m, cy);
+        const hasEmail = loc && loc.email;
+        let relanceCell = '';
+        if (!hasEmail) {
+          relanceCell = `<span style="font-size:11px;color:var(--text-muted);font-style:italic;" title="Aucune adresse email renseignée sur ce locataire">Email manquant</span>`;
+        } else {
+          const btnLabel = derniereRelance ? 'Relancer à nouveau' : 'Relancer';
+          const btnTitle = derniereRelance
+            ? 'Dernière relance : ' + new Date(derniereRelance.date).toLocaleDateString('fr-FR', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})
+            : 'Envoyer un email de relance au locataire';
+          const info = derniereRelance
+            ? `<div style="font-size:10px;color:var(--text-muted);margin-top:3px;">Relancé le ${new Date(derniereRelance.date).toLocaleDateString('fr-FR', {day:'2-digit', month:'short'})}</div>`
+            : '';
+          relanceCell = `<button class="btn btn-sm" onclick="envoyerRelance('${b.id}',${m},${cy})" title="${btnTitle}" style="background:var(--accent-glow);color:var(--accent);border:1px solid rgba(108,92,231,0.25);font-size:11px;padding:5px 10px;display:inline-flex;align-items:center;gap:5px;">✉ ${btnLabel}</button>${info}`;
+        }
         impayeRows.push(`<tr>
           <td>${loc?'<a href="#" onclick="event.preventDefault();openLocataireFiche(\''+b.locId+'\')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">'+(loc.prenom?loc.prenom+' ':'')+loc.nom+'</a>':''}</td><td>${bien?bien.designation:''}</td>
           <td>${proprio?proprio.nom:''}</td>
           <td>${moisNoms[m]} ${cy}</td><td class="money" style="color:var(--danger);font-weight:600">${fmt(montant)}</td>
           <td><span class="status status-unpaid">Impayé</span></td>
+          <td style="white-space:nowrap;">${relanceCell}</td>
         </tr>`);
       }
     }
   });
-  tb.innerHTML = impayeRows.join('') || '<tr><td colspan="6" style="text-align:center;color:var(--success);padding:20px;">Aucun impay\u00e9</td></tr>';
+  tb.innerHTML = impayeRows.join('') || '<tr><td colspan="7" style="text-align:center;color:var(--success);padding:20px;">Aucun impay\u00e9</td></tr>';
 
   renderCharts(actifs, cy, cm);
   renderAlertes(actifs, cy, cm);
@@ -5748,6 +5764,28 @@ Nous vous remercions de bien vouloir effectuer le r\u00e8glement avant cette dat
 Restant \u00e0 votre disposition pour toute question,
 Cordialement,
 {proprio_nom}`
+  },
+  relance: {
+    sujet: 'Rappel \u2014 Loyer impay\u00e9 \u2014 {periode} \u2014 {bien}',
+    corps: `Bonjour {civilite} {prenom} {nom},
+
+J'esp\u00e8re que vous allez bien.
+
+Sauf erreur de ma part, je n'ai pas encore re\u00e7u le r\u00e8glement du loyer pour le mois de {periode}, dont l'\u00e9ch\u00e9ance \u00e9tait fix\u00e9e au {date_echeance}.
+
+Pour rappel :
+- Montant du loyer : {loyer}
+- Charges : {charges}
+- Total \u00e0 r\u00e9gler : {total}
+- Date d'\u00e9ch\u00e9ance : {date_echeance}
+
+Si le r\u00e8glement a \u00e9t\u00e9 effectu\u00e9 entre-temps, merci de bien vouloir ne pas tenir compte de ce message.
+
+Dans le cas contraire, je vous invite \u00e0 proc\u00e9der au paiement dans les meilleurs d\u00e9lais. Si vous rencontrez une difficult\u00e9, n'h\u00e9sitez pas \u00e0 me contacter pour que nous trouvions ensemble une solution.
+
+Restant \u00e0 votre disposition,
+Cordialement,
+{proprio_nom}`
   }
 };
 
@@ -5829,6 +5867,89 @@ function ouvrirEnvoiEmail() {
   renderEmailPreview();
   const emailModal = document.getElementById('modal-email');
   if (emailModal) emailModal.style.display = 'flex';
+}
+
+// Envoi d'une relance pour un impayé (bail/mois/annee précis)
+function envoyerRelance(bailId, mois, annee) {
+  if (!isTokenValid()) {
+    if (currentUser) {
+      alert('Session Google expirée, reconnexion en cours.');
+      requestDriveToken();
+      return;
+    }
+    alert('Session Google expirée. Cliquez sur Sync Drive en haut à droite pour vous reconnecter.');
+    return;
+  }
+
+  const bail = data.baux.find(b => b.id === bailId);
+  if (!bail) { alert('Bail introuvable.'); return; }
+  const loc = data.locataires.find(x => x.id === bail.locId);
+  if (!loc || !loc.email) { alert('Ce locataire n\'a pas d\'adresse email renseignée.'); return; }
+  const P = data.proprios.find(x => x.id === bail.proprioId) || {};
+  const bien = data.biens.find(x => x.id === bail.bienId);
+
+  // Normalise mois / annee en chaînes attendues (mois peut arriver en nombre)
+  const moisNoms = ['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  const moisNum = (typeof mois === 'number') ? mois : (MOIS_NUM[mois] || 1);
+  const moisNom = moisNoms[moisNum];
+  const anneeNum = parseInt(annee);
+  const periode = moisNom + ' ' + anneeNum;
+
+  const mp = getMontantsPeriode(bail, moisNum);
+  const { loyerAppele, chargesAppelees, periodeLabel } = mp;
+
+  const tpl = EMAIL_TEMPLATES.relance;
+  const vars = {
+    civilite: loc.civilite || '',
+    prenom: loc.prenom || '',
+    nom: loc.nom || '',
+    email: loc.email,
+    bien: bien ? bien.designation : bail.bienId,
+    periode: periode,
+    loyer: fmt(loyerAppele),
+    charges: fmt(chargesAppelees),
+    total: fmt(loyerAppele + chargesAppelees),
+    proprio_nom: P.nom || '',
+    date_echeance: getDateEcheance(bail, moisNom, anneeNum)
+  };
+
+  emailQueue = [{
+    bail, P, loc, bien,
+    type: 'relance',
+    mois: moisNom, annee: anneeNum, moisNum,
+    loyerAppele, chargesAppelees, periodeLabel,
+    to: loc.email,
+    sujet: remplirTemplate(tpl.sujet, vars),
+    corps: remplirTemplate(tpl.corps, vars),
+    vars,
+    bailId: bail.id, locId: loc.id
+  }];
+
+  renderEmailPreview();
+  const emailModal = document.getElementById('modal-email');
+  if (emailModal) emailModal.style.display = 'flex';
+}
+
+// Enregistre qu'une relance a été envoyée pour un bail/mois/annee donné
+function logRelance(bailId, mois, annee, emailDestinataire) {
+  if (!data.paiements) data.paiements = [];
+  const moisNum = (typeof mois === 'number') ? mois : (MOIS_NUM[mois] || 0);
+  let p = data.paiements.find(x => x.bailId === bailId && x.mois === moisNum && x.annee === annee);
+  if (!p) {
+    p = { bailId, mois: moisNum, annee: annee, statut: 'impaye', relances: [] };
+    data.paiements.push(p);
+  }
+  if (!p.relances) p.relances = [];
+  p.relances.push({ date: new Date().toISOString(), email: emailDestinataire || '' });
+  saveData();
+}
+
+// Renvoie la dernière relance envoyée pour un bail/mois/annee (ou null)
+function getDerniereRelance(bailId, mois, annee) {
+  const moisNum = (typeof mois === 'number') ? mois : (MOIS_NUM[mois] || 0);
+  const p = (data.paiements || []).find(x => x.bailId === bailId && x.mois === moisNum && x.annee === annee);
+  if (!p || !p.relances || !p.relances.length) return null;
+  return p.relances[p.relances.length - 1];
 }
 
 function renderEmailPreview() {
@@ -6071,7 +6192,12 @@ async function envoyerUnEmail(idx) {
     const _eqBail = data.baux.find(x=>x.id===eq.bailId);
     const _eqLoc = data.locataires.find(x=>x.id===eq.locId);
     const _eqBien = _eqBail ? data.biens.find(x=>x.id===_eqBail.bienId) : null;
-    logActivity({ type: 'email', proprioId: _eqBail?.proprioId||'', locataireId: eq.locId||'', bailId: eq.bailId||'', bienId: _eqBail?.bienId||'', details: 'Email envoyé à ' + to + (_eqBien?' ('+_eqBien.designation+')':'') + (_eqLoc?' - '+((_eqLoc.prenom||'')+' '+_eqLoc.nom).trim():'') });
+    const _relanceTag = eq.type === 'relance' ? ' [Relance]' : '';
+    logActivity({ type: 'email', proprioId: _eqBail?.proprioId||'', locataireId: eq.locId||'', bailId: eq.bailId||'', bienId: _eqBail?.bienId||'', details: 'Email' + _relanceTag + ' envoyé à ' + to + (_eqBien?' ('+_eqBien.designation+')':'') + (_eqLoc?' - '+((_eqLoc.prenom||'')+' '+_eqLoc.nom).trim():'') });
+    // Tracking spécifique relance : on mémorise la date + le destinataire sur le paiement
+    if (eq.type === 'relance' && eq.bailId && eq.moisNum && eq.annee) {
+      try { logRelance(eq.bailId, eq.moisNum, eq.annee, to); } catch(e) { console.error('logRelance error:', e); }
+    }
     saveData();
     return true;
   } catch(e) {
