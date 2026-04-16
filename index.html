@@ -783,7 +783,8 @@ input, select, textarea {
         <div class="email" id="sidebar-email"></div>
       </div>
     </div>
-    <button onclick="toggleDarkMode()" id="btn-dark-mode" title="Basculer le mode clair/sombre" style="width:100%;margin-top:10px;padding:8px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:8px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.8);font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.12)'" onmouseout="this.style.background='rgba(255,255,255,0.04)'"><span id="dark-mode-icon">🌙</span><span id="dark-mode-label">Mode sombre</span></button>
+    <button onclick="openDataOwnerModal()" id="btn-data-owner" title="Partager / acc\u00e9der \u00e0 des donn\u00e9es d'un autre compte" style="width:100%;margin-top:10px;padding:8px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:8px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.8);font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.12)'" onmouseout="this.style.background='rgba(255,255,255,0.04)'"><span>\uD83D\uDC65</span><span>Acc\u00e8s partag\u00e9</span></button>
+    <button onclick="toggleDarkMode()" id="btn-dark-mode" title="Basculer le mode clair/sombre" style="width:100%;margin-top:8px;padding:8px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:8px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.8);font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.12)'" onmouseout="this.style.background='rgba(255,255,255,0.04)'"><span id="dark-mode-icon">🌙</span><span id="dark-mode-label">Mode sombre</span></button>
     <button onclick="handleLogout()" style="width:100%;margin-top:10px;padding:10px 12px;border:1px solid rgba(231,76,60,0.45);border-radius:8px;background:rgba(231,76,60,0.15);color:#fff;font-size:13px;font-weight:600;letter-spacing:0.2px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(231,76,60,0.35)';this.style.borderColor='rgba(231,76,60,0.8)'" onmouseout="this.style.background='rgba(231,76,60,0.15)';this.style.borderColor='rgba(231,76,60,0.45)'"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Déconnexion</button>
   </div>
 </div>
@@ -797,7 +798,10 @@ input, select, textarea {
     <button class="hamburger" id="hamburger-btn" onclick="toggleMobileMenu()" aria-label="Menu">
       <span></span><span></span><span></span>
     </button>
-    <h1 id="topbar-title">Tableau de bord</h1>
+    <div>
+      <h1 id="topbar-title">Tableau de bord</h1>
+      <div id="owner-banner" style="font-size:11px;color:var(--warning);margin-top:2px;display:none;"></div>
+    </div>
     <div class="topbar-actions" style="display:flex;align-items:center;gap:12px;">
       <div style="position:relative;cursor:pointer;" onclick="openCmdK()">
         <div style="padding:8px 14px;border:1px solid var(--border);border-radius:10px;font-size:13px;background:#F7F7F8;color:var(--text-muted);width:300px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
@@ -963,8 +967,8 @@ input, select, textarea {
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <div style="display:inline-flex;background:#f0f0f4;border-radius:10px;padding:3px;">
-        <button id="impayes-view-echeance" onclick="setImpayesView('echeance')" style="padding:6px 14px;border:none;background:white;color:var(--primary);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.06);">Par échéance</button>
-        <button id="impayes-view-locataire" onclick="setImpayesView('locataire')" style="padding:6px 14px;border:none;background:transparent;color:var(--text-muted);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">Par locataire</button>
+        <button id="impayes-view-locataire" onclick="setImpayesView('locataire')" style="padding:6px 14px;border:none;background:white;color:var(--primary);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.06);">Par locataire</button>
+        <button id="impayes-view-echeance" onclick="setImpayesView('echeance')" style="padding:6px 14px;border:none;background:transparent;color:var(--text-muted);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">Par échéance</button>
       </div>
       <select id="impayes-filtre-relance" onchange="debouncedRenderImpayes()" style="padding:8px 12px;border:1px solid var(--border);border-radius:10px;font-size:13px;background:white;">
         <option value="all">Tous les impayés</option>
@@ -1188,9 +1192,19 @@ const DEMO_DATA = {
 const MOIS_NUM = {Janvier:1,Février:2,Mars:3,Avril:4,Mai:5,Juin:6,Juillet:7,Août:8,Septembre:9,Octobre:10,Novembre:11,Décembre:12};
 
 function getStorageKey() {
-  // User-scoped localStorage key
+  // User-scoped localStorage key. En mode d\u00e9l\u00e9gu\u00e9 (ex : femme qui acc\u00e8de aux donn\u00e9es de Kevin),
+  // on scope le cache local par OWNER pour que l'user connect\u00e9 ne m\u00e9lange pas ses donn\u00e9es personnelles
+  // et celles qu'il consulte en d\u00e9l\u00e9gation.
   if (currentUser && currentUser.email) {
-    return 'gl_data_' + currentUser.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    try {
+      const ownerEmail = (typeof getDataOwner === 'function' && getDataOwner()) || currentUser.email.toLowerCase();
+      const sanitized = ownerEmail.replace(/[^a-z0-9]/g, '_');
+      // Pr\u00e9fixe distinct si mode d\u00e9l\u00e9gu\u00e9 pour ne PAS polluer l'espace normal
+      const isDelegated = ownerEmail !== currentUser.email.toLowerCase();
+      return (isDelegated ? 'gl_shared_' : 'gl_data_') + sanitized;
+    } catch(e) {
+      return 'gl_data_' + currentUser.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    }
   }
   return 'gestion_locative_v9';
 }
@@ -3348,6 +3362,62 @@ function initPaiementAnnee() {
   for (let y = minYear; y <= maxYear; y++) years.push(y);
   const selectedYear = currentVal && years.includes(parseInt(currentVal)) ? parseInt(currentVal) : cy;
   sel.innerHTML = years.map(y => `<option value="${y}" ${y===selectedYear?'selected':''}>${y}</option>`).join('');
+}
+
+// ─── Partage d'acc\u00e8s aux donn\u00e9es ───
+function updateOwnerBanner() {
+  const banner = document.getElementById('owner-banner');
+  if (!banner) return;
+  if (isDelegatedMode()) {
+    const owner = getDataOwner();
+    banner.style.display = '';
+    banner.innerHTML = '\uD83D\uDC65 Donn\u00e9es de <strong>' + escapeHtml(owner) + '</strong> \u00b7 Connect\u00e9 en tant que ' + escapeHtml(currentUser.email);
+    banner.style.color = 'var(--warning)';
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+function openDataOwnerModal() {
+  if (!currentUser) { alert('Connectez-vous d\'abord.'); return; }
+  const currentOwner = getDataOwner();
+  const currentLabel = isDelegatedMode()
+    ? 'Vous consultez actuellement les donn\u00e9es de : ' + currentOwner
+    : 'Vous utilisez actuellement VOS propres donn\u00e9es (' + currentUser.email + ')';
+  const msg = `${currentLabel}\n\n` +
+    'Pour acc\u00e9der aux donn\u00e9es d\'un autre compte :\n' +
+    '1. Le propri\u00e9taire des donn\u00e9es doit avoir partag\u00e9 son fichier "gestion_locative_data.json" avec vous (acc\u00e8s \u00c9diteur) depuis son Google Drive.\n' +
+    '2. Saisissez son email ci-dessous.\n' +
+    '3. Les donn\u00e9es se chargeront apr\u00e8s un refresh de la page.\n\n' +
+    'Laissez vide pour repasser sur VOS propres donn\u00e9es.\n\n' +
+    'Note : Les emails que vous enverrez partiront TOUJOURS de votre compte Gmail (' + currentUser.email + '), pas du compte du propri\u00e9taire.';
+  const input = prompt(msg, currentOwner || '');
+  if (input === null) return; // annulation
+  const newOwner = (input || '').trim().toLowerCase();
+  // Validation
+  if (newOwner && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newOwner)) {
+    alert('Email invalide.');
+    return;
+  }
+  if (newOwner === currentUser.email.toLowerCase()) {
+    setDataOwner('');
+    alert('C\'est votre propre email \u2014 mode normal activ\u00e9. Rafra\u00eechissez la page.');
+    return;
+  }
+  setDataOwner(newOwner);
+  if (newOwner) {
+    if (confirm('Mode d\u00e9l\u00e9gu\u00e9 activ\u00e9 : l\'app va essayer de charger les donn\u00e9es partag\u00e9es par ' + newOwner + '.\n\nRafra\u00eechir la page maintenant ?')) {
+      location.reload();
+    } else {
+      updateOwnerBanner();
+    }
+  } else {
+    if (confirm('Mode d\u00e9l\u00e9gu\u00e9 d\u00e9sactiv\u00e9. Rafra\u00eechir la page pour revenir \u00e0 vos donn\u00e9es ?')) {
+      location.reload();
+    } else {
+      updateOwnerBanner();
+    }
+  }
 }
 
 // ─── Dark mode ───
@@ -5983,6 +6053,33 @@ async function firestoreSave() {
 
 // ── GOOGLE AUTH & DRIVE SYNC (Multi-user) ──
 const GDRIVE_FILE_NAME = 'gestion_locative_data.json';
+
+// ─── Partage de donn\u00e9es entre utilisateurs (ex : couple) ───
+// Le "dataOwner" est l'email du propri\u00e9taire des donn\u00e9es. Si vide ou \u00e9gal au user courant,
+// on utilise ses propres donn\u00e9es. Sinon, on cherche le fichier Drive partag\u00e9 par cet email.
+// Le choix est stock\u00e9 en local (pas dans les donn\u00e9es synchronis\u00e9es), par utilisateur connect\u00e9.
+function getDataOwner() {
+  if (!currentUser || !currentUser.email) return '';
+  try {
+    const raw = localStorage.getItem('gl_dataOwner_' + currentUser.email.toLowerCase());
+    return (raw || '').trim().toLowerCase();
+  } catch(e) { return ''; }
+}
+function setDataOwner(email) {
+  if (!currentUser || !currentUser.email) return;
+  try {
+    const clean = (email || '').trim().toLowerCase();
+    if (!clean || clean === currentUser.email.toLowerCase()) {
+      localStorage.removeItem('gl_dataOwner_' + currentUser.email.toLowerCase());
+    } else {
+      localStorage.setItem('gl_dataOwner_' + currentUser.email.toLowerCase(), clean);
+    }
+  } catch(e) {}
+}
+function isDelegatedMode() {
+  const owner = getDataOwner();
+  return !!(owner && currentUser && currentUser.email && owner !== currentUser.email.toLowerCase());
+}
 const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/gmail.send';
 const CLIENT_ID = '618049248733-nd8p759u9ecrnu4tasb1t0uu82t65om1.apps.googleusercontent.com';
 
@@ -6133,6 +6230,8 @@ function updateSidebarUser() {
   }
   nameEl.textContent = currentUser.name;
   emailEl.textContent = currentUser.email;
+  // Actualiser la banni\u00e8re d'acc\u00e8s d\u00e9l\u00e9gu\u00e9 si l'user vient de se connecter
+  try { updateOwnerBanner(); } catch(e) {}
 }
 
 function handleLogout() {
@@ -6196,32 +6295,66 @@ async function gdriveFetch(url, opts = {}, _retried) {
 async function gdriveLoadOrCreate() {
   try {
     document.getElementById('gdrive-status').textContent = 'Sync...';
-    const search = await gdriveFetch('https://www.googleapis.com/drive/v3/files?q=name%3D%27' + encodeURIComponent(GDRIVE_FILE_NAME) + '%27+and+trashed%3Dfalse&spaces=drive&fields=files(id,name,modifiedTime)');
+    const delegated = isDelegatedMode();
+    const ownerEmail = getDataOwner();
+    // On inclut owners dans les fields pour pouvoir filtrer en mode d\u00e9l\u00e9gu\u00e9
+    const search = await gdriveFetch('https://www.googleapis.com/drive/v3/files?q=name%3D%27' + encodeURIComponent(GDRIVE_FILE_NAME) + '%27+and+trashed%3Dfalse&spaces=drive&fields=files(id,name,modifiedTime,owners)&corpora=allDrives&includeItemsFromAllDrives=true&supportsAllDrives=true');
     const result = await search.json();
+    let chosen = null;
     if (result.files && result.files.length > 0) {
-      gdriveFileId = result.files[0].id;
-      const dl = await gdriveFetch('https://www.googleapis.com/drive/v3/files/' + gdriveFileId + '?alt=media');
+      if (delegated) {
+        // Chercher le fichier dont le owner est l'email d\u00e9l\u00e9guant (Kevin)
+        chosen = result.files.find(f => (f.owners || []).some(o => (o.emailAddress || '').toLowerCase() === ownerEmail));
+        if (!chosen) {
+          // Aucun fichier partag\u00e9 trouv\u00e9 pour cet owner
+          const statusEl = document.getElementById('gdrive-status');
+          if (statusEl) {
+            statusEl.textContent = '\u26A0 Fichier de ' + ownerEmail + ' introuvable';
+            statusEl.title = 'Demandez au propri\u00e9taire des donn\u00e9es de vous partager son fichier gestion_locative_data.json depuis Google Drive (acc\u00e8s \u00c9diteur).';
+          }
+          return;
+        }
+      } else {
+        // Mode normal : pr\u00e9f\u00e9rer le fichier dont l'user est owner, fallback sur premier
+        const mine = result.files.find(f => (f.owners || []).some(o => (o.emailAddress || '').toLowerCase() === currentUser.email.toLowerCase()));
+        chosen = mine || result.files[0];
+      }
+      gdriveFileId = chosen.id;
+      const dl = await gdriveFetch('https://www.googleapis.com/drive/v3/files/' + gdriveFileId + '?alt=media&supportsAllDrives=true');
       const remote = await dl.json();
       if (remote && remote.proprios) {
-        // Smart merge: compare local vs remote data richness
-        const localCount = (data.proprios||[]).length + (data.biens||[]).length + (data.locataires||[]).length + (data.baux||[]).length + (data.paiements||[]).length;
-        const remoteCount = (remote.proprios||[]).length + (remote.biens||[]).length + (remote.locataires||[]).length + (remote.baux||[]).length + (remote.paiements||[]).length;
-        if (remoteCount >= localCount) {
+        // En mode d\u00e9l\u00e9gu\u00e9, on ne fait PAS de merge "local vs remote" (le local peut appartenir \u00e0 une session pr\u00e9c\u00e9dente)
+        // On prend toujours la version Drive comme source de v\u00e9rit\u00e9
+        if (delegated) {
           data = remote;
-          saveData(); // cache locally
+          saveData();
         } else {
-          // Local has more data (migration or offline edits) — push local to Drive
-          console.log('Local data richer than Drive (' + localCount + ' vs ' + remoteCount + '), pushing to Drive');
-          await gdriveSave();
+          const localCount = (data.proprios||[]).length + (data.biens||[]).length + (data.locataires||[]).length + (data.baux||[]).length + (data.paiements||[]).length;
+          const remoteCount = (remote.proprios||[]).length + (remote.biens||[]).length + (remote.locataires||[]).length + (remote.baux||[]).length + (remote.paiements||[]).length;
+          if (remoteCount >= localCount) {
+            data = remote;
+            saveData();
+          } else {
+            console.log('Local data richer than Drive (' + localCount + ' vs ' + remoteCount + '), pushing to Drive');
+            await gdriveSave();
+          }
         }
         refreshAll();
+        updateOwnerBanner();
         document.getElementById('gdrive-status').textContent = '\u2713 Synchronis\u00e9';
         return;
       }
     }
-    // No existing file — save current data to Drive
+    if (delegated) {
+      // En mode d\u00e9l\u00e9gu\u00e9 et pas de fichier trouv\u00e9, on ne cr\u00e9e RIEN (pas notre r\u00f4le)
+      const statusEl = document.getElementById('gdrive-status');
+      if (statusEl) statusEl.textContent = '\u26A0 Pas de fichier partag\u00e9';
+      return;
+    }
+    // Mode normal sans fichier : on save nos donn\u00e9es sur Drive
     await gdriveSave();
     document.getElementById('gdrive-status').textContent = '\u2713 Synchronis\u00e9';
+    updateOwnerBanner();
   } catch(e) {
     console.error(e);
     document.getElementById('gdrive-status').textContent = 'Erreur sync';
@@ -6769,8 +6902,8 @@ function debouncedRenderImpayes() {
   _debouncedImpayesTimer = setTimeout(renderImpayes, 150);
 }
 
-// Vue active sur la page Impay\u00e9s : 'echeance' (1 ligne = 1 mois) ou 'locataire' (1 ligne = 1 locataire)
-let _impayesView = 'echeance';
+// Vue active sur la page Impay\u00e9s : 'locataire' (1 ligne = 1 locataire, par d\u00e9faut) ou 'echeance' (1 ligne = 1 mois)
+let _impayesView = 'locataire';
 function setImpayesView(view) {
   _impayesView = (view === 'locataire') ? 'locataire' : 'echeance';
   // Toggle visuel des boutons
