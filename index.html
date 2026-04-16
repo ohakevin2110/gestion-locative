@@ -810,10 +810,11 @@ input, select, textarea {
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-outline btn-sm" onclick="exportJSON()">Exporter (JSON)</button>
         <label class="btn btn-outline btn-sm" style="cursor:pointer;">Importer (JSON)<input type="file" accept=".json" onchange="importJSON(event)" style="display:none"></label>
+        <button class="btn btn-outline btn-sm" onclick="showBackups()">Sauvegardes</button>
       </div>
     </div>
     <div class="card-body">
-      <p style="font-size:13px;color:var(--text-light);">Exportez vos données pour les sauvegarder ou les réimporter plus tard.</p>
+      <p style="font-size:13px;color:var(--text-light);">Exportez vos données pour les sauvegarder ou les réimporter plus tard. Les sauvegardes locales sont créées automatiquement avant chaque import.</p>
     </div>
   </div>
 </div>
@@ -897,7 +898,7 @@ input, select, textarea {
       <p style="font-size:12px;color:var(--text-muted);margin:4px 0 0;">Tous les loyers en attente de règlement — relancez et suivez en un clic</p>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-      <select id="impayes-filtre-relance" onchange="renderImpayes()" style="padding:8px 12px;border:1px solid var(--border);border-radius:10px;font-size:13px;background:white;">
+      <select id="impayes-filtre-relance" onchange="debouncedRenderImpayes()" style="padding:8px 12px;border:1px solid var(--border);border-radius:10px;font-size:13px;background:white;">
         <option value="all">Tous les impayés</option>
         <option value="jamais">Jamais relancés</option>
         <option value="recent">Relancés récemment (≤ 7 jours)</option>
@@ -1125,9 +1126,33 @@ function getStorageKey() {
   }
   return 'gestion_locative_v9';
 }
+// #31 Version croissante incr\u00e9ment\u00e9e \u00e0 chaque save, permet de d\u00e9tecter les modifs concurrentes
+let _lastSavedVersion = 0;
 function saveData() {
-  try { localStorage.setItem(getStorageKey(), JSON.stringify(data)); } catch(e) {}
+  try {
+    _lastSavedVersion = (_lastSavedVersion || 0) + 1;
+    data._version = _lastSavedVersion;
+    data._savedAt = Date.now();
+    localStorage.setItem(getStorageKey(), JSON.stringify(data));
+  } catch(e) { console.warn('saveData:', e.message || e); }
 }
+
+// \u00c9coute les modifs faites dans un autre onglet (m\u00eame navigateur)
+window.addEventListener('storage', (ev) => {
+  if (ev.key !== getStorageKey() || !ev.newValue) return;
+  try {
+    const incoming = JSON.parse(ev.newValue);
+    if (incoming && incoming._version && incoming._version > (_lastSavedVersion || 0)) {
+      // Modif plus r\u00e9cente faite ailleurs : proposer de recharger
+      if (!window._reloadBannerShown) {
+        window._reloadBannerShown = true;
+        const choice = confirm('Les donn\u00e9es ont \u00e9t\u00e9 modifi\u00e9es dans un autre onglet. Recharger maintenant pour \u00e9viter d\'\u00e9craser ces changements ?');
+        if (choice) location.reload();
+        else window._reloadBannerShown = false;
+      }
+    }
+  } catch(e) {}
+});
 function logActivity(opts) {
   // opts: { type, proprioId, locataireId, bailId, bienId, details }
   if (!data.historique) data.historique = [];
@@ -1547,10 +1572,21 @@ function restorePendingHashRoute() {
     if (!window._hashRestoreRetries) window._hashRestoreRetries = 0;
     if (window._hashRestoreRetries < 10) {
       window._hashRestoreRetries++;
+      // #47 Afficher un toast discret au 2e essai
+      if (window._hashRestoreRetries === 2 && !document.getElementById('_sync-toast')) {
+        const t = document.createElement('div');
+        t.id = '_sync-toast';
+        t.style.cssText = 'position:fixed;top:76px;right:16px;background:rgba(108,92,231,0.95);color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.15);';
+        t.textContent = 'Synchronisation en cours\u2026';
+        document.body.appendChild(t);
+      }
       setTimeout(() => { restorePendingHashRoute(); }, 500);
       return;
     }
   }
+  // Nettoyer le toast s'il existe
+  const existingToast = document.getElementById('_sync-toast');
+  if (existingToast) existingToast.remove();
   window._hashRestoreRetries = 0;
   _pendingHashRoute = null;
 
@@ -2390,11 +2426,22 @@ function saveFicheBail(bailId, idx, locId) {
   bail.statut = gv(prefix + '-statut');
   bail.debut = gv(prefix + '-debut');
   bail.fin = gv(prefix + '-fin');
-  bail.loyer = parseFloat(gv(prefix + '-loyer')) || 0;
+  // #36 Montants : refuser valeurs n\u00e9gatives
+  bail.loyer = Math.max(0, parseFloat(gv(prefix + '-loyer')) || 0);
   bail.periodiciteLoyer = gv(prefix + '-perioloyer') || 'mensuelle';
   bail.periodiciteCharges = gv(prefix + '-periodicite');
-  bail.charges = parseFloat(gv(prefix + '-charges')) || 0;
-  bail.chargesTrimestrielles = parseFloat(gv(prefix + '-chargestrim')) || 0;
+  // #27 Si charges mensuelles, chargesTrimestrielles doit \u00eatre \u00e0 0 (et inversement)
+  if (bail.periodiciteCharges === 'trimestrielle') {
+    bail.chargesTrimestrielles = Math.max(0, parseFloat(gv(prefix + '-chargestrim')) || 0);
+    bail.charges = 0;
+  } else {
+    bail.charges = Math.max(0, parseFloat(gv(prefix + '-charges')) || 0);
+    bail.chargesTrimestrielles = 0;
+  }
+  // #27 Si loyer ET charges mensuels, le champ trimestres n'a plus de sens
+  if (bail.periodiciteLoyer === 'mensuelle' && bail.periodiciteCharges !== 'trimestrielle') {
+    bail.trimestres = '';
+  }
   saveData();
   refreshLight();
   const msg = document.getElementById(prefix + '-save-msg');
@@ -2451,11 +2498,18 @@ function saveFicheLocataire(locId) {
 }
 
 function togglePaiementFiche(bailId, mois, annee, locId) {
+  // #49 D\u00e9bounce double-click
+  const key = 'f_' + bailId + '_' + mois + '_' + annee;
+  if (!window._toggleTimers) window._toggleTimers = {};
+  if (window._toggleTimers[key]) return;
+  window._toggleTimers[key] = setTimeout(() => { delete window._toggleTimers[key]; }, 300);
   const idx = data.paiements.findIndex(x => x.bailId === bailId && x.mois === mois && x.annee === annee);
+  const nowIso = new Date().toISOString();
   if (idx >= 0) {
     data.paiements[idx].statut = data.paiements[idx].statut === 'paye' ? 'impaye' : 'paye';
+    data.paiements[idx].dateEnregistrement = nowIso; // #50
   } else {
-    data.paiements.push({ bailId, mois, annee, statut: 'paye' });
+    data.paiements.push({ bailId, mois, annee, statut: 'paye', dateEnregistrement: nowIso });
   }
   const _bail = data.baux.find(x=>x.id===bailId);
   const _loc = data.locataires.find(x=>x.id===locId);
@@ -2921,13 +2975,17 @@ function ficheEnvoyerEmail(locId) {
 
 function renderProprios() {
   const tb = document.querySelector('#table-proprios tbody');
+  // #41 XSS : \u00e9chapper toutes les donn\u00e9es utilisateur
   tb.innerHTML = data.proprios.map((p,i) => {
-    const tag = p.type==='Personnel' ? '<span class="proprio-tag perso">Personnel</span>' : '<span class="proprio-tag societe">'+p.type+'</span>';
+    const eId = escapeHtml(p.id), eType = escapeHtml(p.type || ''), eNom = escapeHtml(p.nom || '');
+    const eAdr = escapeHtml(p.adresse || ''), eCp = escapeHtml(p.cp || ''), eVille = escapeHtml(p.ville || '');
+    const eSiret = escapeHtml(p.siret || ''), eEmail = escapeHtml(p.email || '');
+    const tag = p.type==='Personnel' ? '<span class="proprio-tag perso">Personnel</span>' : '<span class="proprio-tag societe">'+eType+'</span>';
     return `<tr>
-      <td>${p.id}</td><td>${tag}</td><td><strong>${p.nom}</strong></td>
-      <td>${p.adresse||''}</td><td>${p.cp||''} ${p.ville||''}</td>
-      <td>${p.siret||'-'}</td><td>${p.email||''}</td>
-      <td style="white-space:nowrap;"><button class="btn btn-sm" style="background:var(--accent);color:white;margin-right:4px;" onclick="editProprio(${i})">Modifier</button><button class="btn btn-sm" style="background:#2d3436;color:white;margin-right:4px;" onclick="openProprioHistorique('${p.id}')">Historique</button><button class="btn btn-danger btn-sm" onclick="deleteProprio(${i})">Suppr.</button></td>
+      <td>${eId}</td><td>${tag}</td><td><strong>${eNom}</strong></td>
+      <td>${eAdr}</td><td>${eCp} ${eVille}</td>
+      <td>${eSiret||'-'}</td><td>${eEmail}</td>
+      <td style="white-space:nowrap;"><button class="btn btn-sm" style="background:var(--accent);color:white;margin-right:4px;" onclick="editProprio(${i})">Modifier</button><button class="btn btn-sm" style="background:#2d3436;color:white;margin-right:4px;" onclick="openProprioHistorique('${eId}')">Historique</button><button class="btn btn-danger btn-sm" onclick="deleteProprio(${i})">Suppr.</button></td>
     </tr>`;
   }).join('') || '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-light)">Aucun propriétaire. Cliquez sur "+ Ajouter" pour commencer.</td></tr>';
 }
@@ -2971,13 +3029,20 @@ function renderBiens() {
   tb.innerHTML = filtered.map((b) => {
     const i = data.biens.indexOf(b);
     const proprio = data.proprios.find(x=>x.id===b.proprioId);
-    const pTag = proprio ? (proprio.type==='Personnel'?'<span class="proprio-tag perso">'+proprio.nom+'</span>':'<span class="proprio-tag societe">'+proprio.nom+'</span>') : '<span style="color:var(--danger)">Non d\u00e9fini</span>';
+    // #41 XSS : \u00e9chapper toutes les donn\u00e9es utilisateur
+    const eId = escapeHtml(b.id), eDesig = escapeHtml(b.designation || ''), eType = escapeHtml(b.type || '');
+    const eAdr = escapeHtml(b.adresse || ''), eCp = escapeHtml(b.cp || ''), eVille = escapeHtml(b.ville || '');
+    const eSurf = escapeHtml(String(b.surface || ''));
+    const eProprioNom = escapeHtml(proprio ? proprio.nom || '' : '');
+    const pTag = proprio ? (proprio.type==='Personnel'?'<span class="proprio-tag perso">'+eProprioNom+'</span>':'<span class="proprio-tag societe">'+eProprioNom+'</span>') : '<span style="color:var(--danger)">Non d\u00e9fini</span>';
     const bail = data.baux.find(x=>x.bienId===b.id && x.statut==='Actif');
     const loc = bail ? data.locataires.find(x=>x.id===bail.locId) : null;
-    const locNom = loc ? '<a href="#" onclick="event.preventDefault();openLocataireFiche(\''+bail.locId+'\')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">'+(loc.prenom?loc.prenom+' ':'')+loc.nom+'</a>' : '<span style="color:var(--text-light);font-style:italic;">Vacant</span>';
+    const eLocName = escapeHtml(loc ? getLocataireName(loc) : '');
+    const eBailLocId = escapeHtml(bail ? bail.locId : '');
+    const locNom = loc ? '<a href="#" onclick="event.preventDefault();openLocataireFiche(\''+eBailLocId+'\')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">'+eLocName+'</a>' : '<span style="color:var(--text-light);font-style:italic;">Vacant</span>';
     return `<tr>
-    <td>${b.id}</td><td>${pTag}</td><td><a href="#" onclick="event.preventDefault();openBienFiche('${b.id}')" style="color:var(--accent);font-weight:600;text-decoration:none;">${b.designation}</a></td><td>${b.type}</td><td>${locNom}</td>
-    <td>${b.adresse}</td><td>${b.cp}</td><td>${b.ville}</td><td>${b.surface} m\u00B2</td>
+    <td>${eId}</td><td>${pTag}</td><td><a href="#" onclick="event.preventDefault();openBienFiche('${eId}')" style="color:var(--accent);font-weight:600;text-decoration:none;">${eDesig}</a></td><td>${eType}</td><td>${locNom}</td>
+    <td>${eAdr}</td><td>${eCp}</td><td>${eVille}</td><td>${eSurf} m\u00B2</td>
     <td style="white-space:nowrap;"><button class="btn btn-sm" style="background:var(--accent);color:white;margin-right:4px;" onclick="editBien(${i})">Modifier</button><button class="btn btn-danger btn-sm" onclick="deleteBien(${i})">Suppr.</button></td>
   </tr>`;
   }).join('');
@@ -3050,16 +3115,22 @@ function renderBaux() {
     const loc = data.locataires.find(x=>x.id===b.locId);
     const proprio = data.proprios.find(x=>x.id===b.proprioId);
     const st = b.statut==='Actif'?'active':'';
-    const pTag = proprio ? (proprio.type==='Personnel'?'<span class="proprio-tag perso">'+proprio.nom+'</span>':'<span class="proprio-tag societe">'+proprio.nom+'</span>') : '-';
+    // #41 XSS : \u00e9chapper toutes les donn\u00e9es utilisateur
+    const eBailId = escapeHtml(b.id), eBienId = escapeHtml(b.bienId), eLocId = escapeHtml(b.locId);
+    const eStatut = escapeHtml(b.statut || '');
+    const eProprioNom = escapeHtml(proprio ? proprio.nom || '' : '');
+    const eBienDesign = escapeHtml(bien ? (bien.designation || bien.id) : b.bienId);
+    const eLocName = escapeHtml(loc ? getLocataireName(loc) : b.locId);
+    const pTag = proprio ? (proprio.type==='Personnel'?'<span class="proprio-tag perso">'+eProprioNom+'</span>':'<span class="proprio-tag societe">'+eProprioNom+'</span>') : '-';
     let chargesInfo = fmt(b.charges)+'/mois';
     if(b.periodiciteCharges==='trimestrielle') chargesInfo = fmt(b.chargesTrimestrielles||0)+'/trim.';
     return `<tr>
-      <td>${b.id}</td><td>${pTag}</td><td>${bien?bien.designation:b.bienId}</td>
-      <td>${loc?'<a href="#" onclick="event.preventDefault();openLocataireFiche(\''+b.locId+'\')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">'+(loc.prenom?loc.prenom+' ':'')+loc.nom+'</a>':b.locId}</td>
+      <td>${eBailId}</td><td>${pTag}</td><td>${eBienDesign}</td>
+      <td>${loc?'<a href="#" onclick="event.preventDefault();openLocataireFiche(\''+eLocId+'\')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">'+eLocName+'</a>':eLocId}</td>
       <td>${fmtDate(b.debut)}</td><td>${fmtDate(b.fin)}</td>
       <td class="money">${fmt(b.loyer)}</td><td class="money">${chargesInfo}</td>
-      <td><span class="status status-${st}">${b.statut}</span></td>
-      <td style="white-space:nowrap;"><button class="btn btn-sm" style="background:var(--accent);color:white;margin-right:4px;" onclick="openLocataireFiche('${b.locId}')">Modifier</button><button class="btn btn-danger btn-sm" onclick="deleteBail(${i})">Suppr.</button></td>
+      <td><span class="status status-${st}">${eStatut}</span></td>
+      <td style="white-space:nowrap;"><button class="btn btn-sm" style="background:var(--accent);color:white;margin-right:4px;" onclick="openLocataireFiche('${eLocId}')">Modifier</button><button class="btn btn-danger btn-sm" onclick="deleteBail(${i})">Suppr.</button></td>
     </tr>`;
   }).join('');
 }
@@ -3209,11 +3280,18 @@ function getPaiementStatut(bailId, mois, annee) {
 }
 
 function togglePaiement(bailId, mois, annee) {
+  // #49 D\u00e9bounce double-click (300ms par paiement unique)
+  const key = bailId + '_' + mois + '_' + annee;
+  if (!window._toggleTimers) window._toggleTimers = {};
+  if (window._toggleTimers[key]) return; // clic ignor\u00e9
+  window._toggleTimers[key] = setTimeout(() => { delete window._toggleTimers[key]; }, 300);
   const idx = data.paiements.findIndex(x => x.bailId === bailId && x.mois === mois && x.annee === annee);
+  const nowIso = new Date().toISOString();
   if (idx >= 0) {
     data.paiements[idx].statut = data.paiements[idx].statut === 'paye' ? 'impaye' : 'paye';
+    data.paiements[idx].dateEnregistrement = nowIso; // #50
   } else {
-    data.paiements.push({ bailId, mois, annee, statut: 'paye' });
+    data.paiements.push({ bailId, mois, annee, statut: 'paye', dateEnregistrement: nowIso });
   }
   const _bail2 = data.baux.find(x=>x.id===bailId);
   const _loc2 = _bail2 ? data.locataires.find(x=>x.id===_bail2.locId) : null;
@@ -3383,6 +3461,24 @@ function renderPaiements() {
 }
 
 function renderDashboard() {
+  // #45 \u00c9tat vide : onboarding pour nouvel utilisateur (aucun propri\u00e9taire ET aucun bien)
+  if ((!data.proprios || data.proprios.length === 0) && (!data.biens || data.biens.length === 0)) {
+    const kpisEl = document.getElementById('kpis');
+    if (kpisEl) {
+      kpisEl.innerHTML = `
+        <div class="card" style="grid-column:1 / -1;padding:40px;text-align:center;background:linear-gradient(135deg,rgba(108,92,231,0.06),rgba(16,185,129,0.04));border:1px dashed rgba(108,92,231,0.3);">
+          <div style="font-size:56px;margin-bottom:12px;">\u{1F3E0}</div>
+          <h2 style="font-size:22px;color:var(--primary);margin:0 0 8px;">Bienvenue dans Gestion Locative</h2>
+          <p style="font-size:14px;color:var(--text-light);margin:0 0 20px;max-width:520px;margin-left:auto;margin-right:auto;">Commencez par ajouter votre premier propri\u00e9taire, puis vos biens, vos locataires et vos baux. Vous pourrez ensuite suivre les paiements et g\u00e9n\u00e9rer quittances et avis d'\u00e9ch\u00e9ance.</p>
+          <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="openModal('proprio')" style="padding:10px 24px;">\u{1F464} Ajouter un propri\u00e9taire</button>
+            <button class="btn btn-outline" onclick="importJSONTrigger()" style="padding:10px 24px;">\u{1F4C1} Importer des donn\u00e9es</button>
+          </div>
+        </div>
+      `;
+    }
+    return;
+  }
   const actifs = getFilteredBaux().filter(b=>b.statut==='Actif');
   const revenuMensuel = actifs.reduce((s,b)=>{
     let charges = b.charges||0;
@@ -3661,66 +3757,98 @@ function showConfirm(message, onConfirm) {
 }
 function closeConfirm() { const el = document.getElementById('modal-confirm'); if (el) el.style.display = 'none'; }
 
-// #3 Suppression avec vérification/cascade : empêche les baux orphelins
-function deleteProprio(i) {
-  const p = data.proprios[i]; if (!p) return;
+// #3/#32/#33/#34 Suppression par ID (pas par index) avec cascade compl\u00e8te
+function _removeById(arr, id) { const i = arr.findIndex(x => x.id === id); if (i >= 0) arr.splice(i, 1); }
+function _purgeHistoriqueDocs(bailIds) {
+  data.historique = (data.historique || []).filter(h => !h.bailId || !bailIds.includes(h.bailId));
+  data.documentsGeneres = (data.documentsGeneres || []).filter(d => !d.bailId || !bailIds.includes(d.bailId));
+}
+
+function deleteProprio(idOrIdx) {
+  // R\u00e9trocompat : accepte ID ou index
+  const p = (typeof idOrIdx === 'string') ? data.proprios.find(x => x.id === idOrIdx) : data.proprios[idOrIdx];
+  if (!p) return;
   const bauxLies = data.baux.filter(b => b.proprioId === p.id);
   const biensLies = data.biens.filter(b => b.proprioId === p.id);
   if (bauxLies.length || biensLies.length) {
-    alert('Ce propriétaire est lié à ' + biensLies.length + ' bien(s) et ' + bauxLies.length + ' bail/baux. Supprimez ou réassignez-les d\'abord.');
+    alert('Ce propri\u00e9taire est li\u00e9 \u00e0 ' + biensLies.length + ' bien(s) et ' + bauxLies.length + ' bail/baux. Supprimez ou r\u00e9assignez-les d\'abord.');
     return;
   }
-  showConfirm('Êtes-vous sûr de vouloir supprimer ce propriétaire ?', () => { data.proprios.splice(i,1); saveData(); refreshAll(); });
+  showConfirm('\u00cates-vous s\u00fbr de vouloir supprimer ce propri\u00e9taire ?', () => {
+    data.historique = (data.historique || []).filter(h => h.proprioId !== p.id);
+    _removeById(data.proprios, p.id);
+    saveData(); refreshAll();
+  });
 }
-function deleteBien(i) {
-  const b = data.biens[i]; if (!b) return;
+
+function deleteBien(idOrIdx) {
+  const b = (typeof idOrIdx === 'string') ? data.biens.find(x => x.id === idOrIdx) : data.biens[idOrIdx];
+  if (!b) return;
   const bauxLies = data.baux.filter(x => x.bienId === b.id);
   if (bauxLies.length) {
     const bauxActifs = bauxLies.filter(x => x.statut === 'Actif');
     if (bauxActifs.length) {
-      alert('Ce bien a ' + bauxActifs.length + ' bail/baux ACTIF(S). Résiliez ou supprimez ces baux avant de supprimer le bien.');
+      alert('Ce bien a ' + bauxActifs.length + ' bail/baux ACTIF(S). R\u00e9siliez ou supprimez ces baux avant de supprimer le bien.');
       return;
     }
-    showConfirm('Ce bien a ' + bauxLies.length + ' bail/baux historique(s). La suppression du bien supprimera aussi ces baux et leurs paiements. Continuer ?', () => {
+    showConfirm('Ce bien a ' + bauxLies.length + ' bail/baux historique(s). La suppression du bien supprimera aussi ces baux, leurs paiements, leurs relances et les entr\u00e9es d\'historique associ\u00e9es. Continuer ?', () => {
       const bailIds = bauxLies.map(x => x.id);
       data.paiements = (data.paiements || []).filter(p => !bailIds.includes(p.bailId));
       data.baux = data.baux.filter(x => x.bienId !== b.id);
-      data.biens.splice(i,1);
+      _purgeHistoriqueDocs(bailIds);
+      data.historique = (data.historique || []).filter(h => h.bienId !== b.id);
+      _removeById(data.biens, b.id);
       saveData(); refreshAll();
     });
     return;
   }
-  showConfirm('Êtes-vous sûr de vouloir supprimer ce bien ?', () => { data.biens.splice(i,1); saveData(); refreshAll(); });
+  showConfirm('\u00cates-vous s\u00fbr de vouloir supprimer ce bien ?', () => {
+    data.historique = (data.historique || []).filter(h => h.bienId !== b.id);
+    _removeById(data.biens, b.id);
+    saveData(); refreshAll();
+  });
 }
-function deleteLocataire(i) {
-  const l = data.locataires[i]; if (!l) return;
+
+function deleteLocataire(idOrIdx) {
+  const l = (typeof idOrIdx === 'string') ? data.locataires.find(x => x.id === idOrIdx) : data.locataires[idOrIdx];
+  if (!l) return;
   const bauxLies = data.baux.filter(b => b.locId === l.id);
   if (bauxLies.length) {
     const bauxActifs = bauxLies.filter(b => b.statut === 'Actif');
     if (bauxActifs.length) {
-      alert('Ce locataire a ' + bauxActifs.length + ' bail/baux ACTIF(S). Résiliez ou supprimez ces baux avant de supprimer le locataire.');
+      alert('Ce locataire a ' + bauxActifs.length + ' bail/baux ACTIF(S). R\u00e9siliez ou supprimez ces baux avant de supprimer le locataire.');
       return;
     }
-    showConfirm('Ce locataire a ' + bauxLies.length + ' bail/baux historique(s). La suppression supprimera aussi ces baux et leurs paiements. Continuer ?', () => {
+    showConfirm('Ce locataire a ' + bauxLies.length + ' bail/baux historique(s). La suppression supprimera aussi ces baux, leurs paiements, leurs relances et les entr\u00e9es d\'historique associ\u00e9es. Continuer ?', () => {
       const bailIds = bauxLies.map(x => x.id);
       data.paiements = (data.paiements || []).filter(p => !bailIds.includes(p.bailId));
       data.baux = data.baux.filter(b => b.locId !== l.id);
-      data.locataires.splice(i,1);
+      _purgeHistoriqueDocs(bailIds);
+      data.historique = (data.historique || []).filter(h => h.locataireId !== l.id);
+      _removeById(data.locataires, l.id);
       saveData(); refreshAll();
     });
     return;
   }
-  showConfirm('Êtes-vous sûr de vouloir supprimer ce locataire ?', () => { data.locataires.splice(i,1); saveData(); refreshAll(); });
+  showConfirm('\u00cates-vous s\u00fbr de vouloir supprimer ce locataire ?', () => {
+    data.historique = (data.historique || []).filter(h => h.locataireId !== l.id);
+    _removeById(data.locataires, l.id);
+    saveData(); refreshAll();
+  });
 }
-function deleteBail(i) {
-  const b = data.baux[i]; if (!b) return;
+
+function deleteBail(idOrIdx) {
+  const b = (typeof idOrIdx === 'string') ? data.baux.find(x => x.id === idOrIdx) : data.baux[idOrIdx];
+  if (!b) return;
   const paiementsLies = (data.paiements || []).filter(p => p.bailId === b.id);
   const msg = paiementsLies.length
-    ? 'Ce bail a ' + paiementsLies.length + ' paiement(s) enregistré(s). La suppression les effacera aussi. Continuer ?'
-    : 'Êtes-vous sûr de vouloir supprimer ce bail ?';
+    ? 'Ce bail a ' + paiementsLies.length + ' paiement(s) et relance(s) enregistr\u00e9(s). La suppression les effacera aussi. Continuer ?'
+    : '\u00cates-vous s\u00fbr de vouloir supprimer ce bail ?';
   showConfirm(msg, () => {
     data.paiements = (data.paiements || []).filter(p => p.bailId !== b.id);
-    data.baux.splice(i,1);
+    _purgeHistoriqueDocs([b.id]);
+    data.historique = (data.historique || []).filter(h => h.bailId !== b.id);
+    _removeById(data.baux, b.id);
     saveData(); refreshAll();
   });
 }
@@ -3851,13 +3979,22 @@ function openModalBailForBien(bienId) {
 }
 
 // ── SAVE ENTITIES ──
+// #48 Validation SIRET (14 chiffres). Accepte vide (facultatif).
+function validateSiret(siret) {
+  if (!siret) return true;
+  const cleaned = String(siret).replace(/\s/g, '');
+  return /^\d{14}$/.test(cleaned);
+}
+
 function saveProprio() {
   const nom = gv('m-pr-nom');
   if (!nom) { alert('Le nom est obligatoire'); return; }
+  const siret = gv('m-pr-siret');
+  if (!validateSiret(siret)) { alert('SIRET invalide : il doit contenir exactement 14 chiffres (ou \u00eatre laiss\u00e9 vide).'); return; }
   data.proprios.push({
     id: nextId('PR', data.proprios), type: gv('m-pr-type'), nom: nom,
     adresse: gv('m-pr-adresse'), cp: gv('m-pr-cp'), ville: gv('m-pr-ville'),
-    siret: gv('m-pr-siret'), tva: gv('m-pr-tva'), tel: gv('m-pr-tel'), email: gv('m-pr-email')
+    siret: siret.replace(/\s/g, ''), tva: gv('m-pr-tva'), tel: gv('m-pr-tel'), email: gv('m-pr-email')
   });
   saveData(); refreshAll(); closeModal();
 }
@@ -3867,12 +4004,14 @@ function updateProprio(proprioId) {
   if (!proprio) return;
   const nom = gv('m-pr-nom');
   if (!nom) { alert('Le nom est obligatoire'); return; }
+  const siret = gv('m-pr-siret');
+  if (!validateSiret(siret)) { alert('SIRET invalide : il doit contenir exactement 14 chiffres (ou \u00eatre laiss\u00e9 vide).'); return; }
   proprio.type = gv('m-pr-type');
   proprio.nom = nom;
   proprio.adresse = gv('m-pr-adresse');
   proprio.cp = gv('m-pr-cp');
   proprio.ville = gv('m-pr-ville');
-  proprio.siret = gv('m-pr-siret');
+  proprio.siret = siret.replace(/\s/g, '');
   proprio.tva = gv('m-pr-tva');
   proprio.tel = gv('m-pr-tel');
   proprio.email = gv('m-pr-email');
@@ -4281,10 +4420,22 @@ function saveBail() {
   if (!proprioId) { alert('Ce bien n\'a pas de propriétaire. Modifiez le bien d\'abord.'); return; }
   const perioCharges = gv('m-ba-periocharges');
   const perioLoyer = gv('m-ba-perioloyer') || 'mensuelle';
-  const chargesMontant = parseFloat(gv('m-ba-charges'))||0;
-  // #9 Bloquer doublon : m\u00eame bien + m\u00eame locataire + p\u00e9riodes qui se chevauchent
+  // #36 Montants : refuser n\u00e9gatifs
+  const chargesMontant = Math.max(0, parseFloat(gv('m-ba-charges'))||0);
+  const loyerMontant = Math.max(0, parseFloat(gv('m-ba-loyer'))||0);
+  const depotMontant = Math.max(0, parseFloat(gv('m-ba-depot'))||0);
   const locId = gv('m-ba-loc');
   const newDebut = gv('m-ba-debut'), newFin = gv('m-ba-fin');
+  // #35 Validation format des dates (vide accept\u00e9 mais format invalide refus\u00e9)
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+  if (newDebut && !dateRe.test(newDebut)) { alert('Date de d\u00e9but invalide. Format attendu : AAAA-MM-JJ.'); return; }
+  if (newFin && !dateRe.test(newFin)) { alert('Date de fin invalide. Format attendu : AAAA-MM-JJ.'); return; }
+  if (newDebut && newFin && newDebut > newFin) { alert('La date de d\u00e9but doit \u00eatre ant\u00e9rieure \u00e0 la date de fin.'); return; }
+  // #29 jourEcheance clamp\u00e9 entre 1 et 28 (compatible tous les mois)
+  let jourEch = parseInt(gv('m-ba-jour'));
+  if (isNaN(jourEch)) jourEch = 1;
+  jourEch = Math.max(1, Math.min(28, jourEch));
+  // #9 Bloquer doublon : m\u00eame bien + m\u00eame locataire + p\u00e9riodes qui se chevauchent
   const overlap = data.baux.find(b => {
     if (b.bienId !== bienId || b.locId !== locId) return false;
     const aD = b.debut || '0000-01-01', aF = b.fin || '9999-12-31';
@@ -4295,17 +4446,19 @@ function saveBail() {
     alert('Un bail pour ce bien et ce locataire existe d\u00e9j\u00e0 (' + overlap.id + ') sur une p\u00e9riode qui se chevauche. V\u00e9rifiez les dates de d\u00e9but / fin.');
     return;
   }
+  // #27 Trimestres pertinents seulement si loyer OU charges trimestriels
+  const trimestresValue = (perioLoyer === 'trimestrielle' || perioCharges === 'trimestrielle') ? gv('m-ba-trimestres') : '';
   data.baux.push({
     id: nextId('BAIL-', data.baux), proprioId: proprioId,
-    bienId: bienId, locId: gv('m-ba-loc'),
-    debut: gv('m-ba-debut'), fin: gv('m-ba-fin'),
-    loyer: parseFloat(gv('m-ba-loyer'))||0,
+    bienId: bienId, locId: locId,
+    debut: newDebut, fin: newFin,
+    loyer: loyerMontant,
     periodiciteLoyer: perioLoyer,
     charges: perioCharges==='mensuelle' ? chargesMontant : 0,
     chargesTrimestrielles: perioCharges==='trimestrielle' ? chargesMontant : 0,
     periodiciteCharges: perioCharges,
-    trimestres: gv('m-ba-trimestres'),
-    depot: parseFloat(gv('m-ba-depot'))||0, jourEcheance: parseInt(gv('m-ba-jour'))||1,
+    trimestres: trimestresValue,
+    depot: depotMontant, jourEcheance: jourEch,
     statut: gv('m-ba-statut')
   });
   const _newBail = data.baux[data.baux.length - 1];
@@ -4338,17 +4491,22 @@ function genererDocumentsFiche(bienId) {
     // Generate for all active baux of this bien
     const bauxBien = data.baux.filter(b => b.bienId === bienId && b.statut === 'Actif');
     document.getElementById('gen-bail').value = 'all';
-    // Override genererDocuments filtering
-    const origBaux = data.baux;
-    const filteredBaux = bauxBien.map(b => Object.assign({}, b));
-    // Use bail filter: generate one by one
-    let count = 0;
+    // #51 Try/catch par bail : erreur sur un bail ne stoppe pas la batch
+    let count = 0, errors = 0;
     bauxBien.forEach(b => {
-      document.getElementById('gen-bail').value = b.id;
-      genererDocuments();
-      count++;
+      try {
+        document.getElementById('gen-bail').value = b.id;
+        genererDocuments();
+        count++;
+      } catch (e) {
+        console.error('Erreur bail ' + b.id + ':', e);
+        errors++;
+      }
     });
-    document.getElementById('fiche-gen-result').innerHTML = '<div style="color:var(--success);font-size:13px;font-weight:600;">✓ ' + count + ' document(s) généré(s)</div>';
+    let resultMsg = '<div style="color:var(--success);font-size:13px;font-weight:600;">\u2713 ' + count + ' document(s) g\u00e9n\u00e9r\u00e9(s)';
+    if (errors) resultMsg += ' <span style="color:var(--danger);">(' + errors + ' erreur(s))</span>';
+    resultMsg += '</div>';
+    document.getElementById('fiche-gen-result').innerHTML = resultMsg;
     return;
   }
   document.getElementById('gen-bail').value = bailSel;
@@ -4796,15 +4954,17 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   doc.text(`Date d'\u00e9ch\u00e9ance du paiement : ${String(jour).padStart(2,'0')}/${String(moisNum).padStart(2,'0')}/${annee}`, w/2, y+6.5, {align:'center'});
   y+=14;
 
-  // #6 Si le bail n'\u00e9tait pas encore actif au mois pr\u00e9c\u00e9dent, afficher une mention sp\u00e9cifique
-  //    (\u00e9vite de g\u00e9n\u00e9rer une quittance pour une p\u00e9riode pr\u00e9-bail)
+  // #6/#28 Si le bail n'\u00e9tait pas encore actif au mois pr\u00e9c\u00e9dent, afficher un bandeau d'avertissement visible
+  //    (le d\u00e9tail 0,00 \u20ac reste affich\u00e9 dessous pour \u00eatre explicite)
   const bailActifPrev = isBailActifPourMois(bail, moisNum, annee);
   if (!bailActifPrev) {
-    doc.setFillColor(254,249,231); doc.rect(15,y,180,12,'F');
-    doc.setDrawColor(245,158,11); doc.rect(15,y,180,12,'S');
-    doc.setTextColor(180,100,0); doc.setFont('helvetica','bold'); doc.setFontSize(9);
-    doc.text('Le bail n\'\u00e9tait pas encore actif sur cette p\u00e9riode. Aucune quittance n\'est due.',20,y+8);
-    y+=18;
+    doc.setFillColor(254,249,231); doc.rect(15,y,180,16,'F');
+    doc.setDrawColor(245,158,11); doc.rect(15,y,180,16,'S');
+    doc.setTextColor(180,100,0); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+    doc.text('Aucune quittance \u00e0 \u00e9mettre \u2014 bail pas encore actif au mois pr\u00e9c\u00e9dent',w/2,y+6,{align:'center'});
+    doc.setFont('helvetica','normal'); doc.setFontSize(8);
+    doc.text('Ce document ne constitue pas une quittance valide pour la p\u00e9riode concern\u00e9e.',w/2,y+12,{align:'center'});
+    y+=22;
   } else if (!prevPaye) {
     // Message mois pr\u00e9c\u00e9dent non pay\u00e9
     doc.setFillColor(253,237,236); doc.rect(15,y,180,12,'F');
@@ -4963,6 +5123,10 @@ function todayFr() {
 }
 
 function numberToFrench(n) {
+  // #42 Guards sur valeurs limites
+  if (n === null || n === undefined || isNaN(n)) return 'z\u00e9ro euro';
+  if (n < 0) return 'montant n\u00e9gatif (' + Math.abs(n).toFixed(2).replace('.', ',') + ' \u20ac)';
+  if (n === 0) return 'z\u00e9ro euro';
   const u=['','un','deux','trois','quatre','cinq','six','sept','huit','neuf','dix','onze','douze','treize','quatorze','quinze','seize','dix-sept','dix-huit','dix-neuf'];
   const d=['','dix','vingt','trente','quarante','cinquante','soixante','soixante','quatre-vingt','quatre-vingt'];
   function c(num){
@@ -4988,6 +5152,91 @@ function exportJSON() {
   const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='gestion_locative_data.json'; a.click();
 }
+// #30 Nettoie les r\u00e9f\u00e9rences crois\u00e9es invalides d'un import
+function validateImportedData(d) {
+  if (!d || typeof d !== 'object') return { data: null, report: 'Donn\u00e9es invalides' };
+  d.proprios = Array.isArray(d.proprios) ? d.proprios : [];
+  d.biens = Array.isArray(d.biens) ? d.biens : [];
+  d.locataires = Array.isArray(d.locataires) ? d.locataires : [];
+  d.baux = Array.isArray(d.baux) ? d.baux : [];
+  d.paiements = Array.isArray(d.paiements) ? d.paiements : [];
+  d.historique = Array.isArray(d.historique) ? d.historique : [];
+  d.documentsGeneres = Array.isArray(d.documentsGeneres) ? d.documentsGeneres : [];
+  const proprioIds = new Set(d.proprios.map(p => p.id));
+  const bienIds = new Set(d.biens.map(b => b.id));
+  const locIds = new Set(d.locataires.map(l => l.id));
+  const bailIds = new Set(d.baux.map(b => b.id));
+  let orphanBiens = 0, orphanBaux = 0, orphanPaiements = 0, orphanDocs = 0;
+  d.biens = d.biens.filter(b => {
+    if (b.proprioId && !proprioIds.has(b.proprioId)) { orphanBiens++; return false; }
+    return true;
+  });
+  d.baux = d.baux.filter(b => {
+    if (b.proprioId && !proprioIds.has(b.proprioId)) { orphanBaux++; return false; }
+    if (b.bienId && !bienIds.has(b.bienId)) { orphanBaux++; return false; }
+    if (b.locId && !locIds.has(b.locId)) { orphanBaux++; return false; }
+    return true;
+  });
+  const validBailIds = new Set(d.baux.map(b => b.id));
+  d.paiements = d.paiements.filter(p => {
+    if (p.bailId && !validBailIds.has(p.bailId)) { orphanPaiements++; return false; }
+    return true;
+  });
+  d.documentsGeneres = d.documentsGeneres.filter(dc => {
+    if (dc.bailId && !validBailIds.has(dc.bailId)) { orphanDocs++; return false; }
+    return true;
+  });
+  const report = [];
+  if (orphanBiens) report.push(orphanBiens + ' bien(s) orphelin(s)');
+  if (orphanBaux) report.push(orphanBaux + ' bail(s) orphelin(s)');
+  if (orphanPaiements) report.push(orphanPaiements + ' paiement(s) orphelin(s)');
+  if (orphanDocs) report.push(orphanDocs + ' document(s) orphelin(s)');
+  return { data: d, report: report.length ? ('Nettoyage : ' + report.join(', ')) : 'Aucun orphelin d\u00e9tect\u00e9' };
+}
+
+// #45 Helper pour d\u00e9clencher l'input file d'import JSON depuis l'\u00e9tat vide
+function importJSONTrigger() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = importJSON;
+  input.click();
+}
+
+// #43 Lister et restaurer les backups locaux cr\u00e9\u00e9s avant chaque import
+function showBackups() {
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith('gl_backup_')) keys.push(k);
+  }
+  keys.sort().reverse(); // plus r\u00e9centes en premier
+  if (!keys.length) { alert('Aucune sauvegarde locale disponible.'); return; }
+  const lines = keys.map((k, i) => {
+    const m = k.match(/gl_backup_([^_]+)/);
+    const ts = m ? m[1].replace(/-/g, ':') : k;
+    let size = '?';
+    try { size = Math.round((localStorage.getItem(k) || '').length / 1024) + ' ko'; } catch(e) {}
+    return (i + 1) + '. ' + ts + ' (' + size + ')';
+  }).join('\n');
+  const choice = prompt('Sauvegardes locales disponibles :\n\n' + lines + '\n\nEntrez le num\u00e9ro pour restaurer, ou laissez vide pour annuler.');
+  if (!choice) return;
+  const idx = parseInt(choice) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= keys.length) { alert('Num\u00e9ro invalide.'); return; }
+  if (!confirm('Restaurer la sauvegarde ' + keys[idx] + ' ? Vos donn\u00e9es actuelles seront remplac\u00e9es (une nouvelle sauvegarde sera cr\u00e9\u00e9e).')) return;
+  try {
+    const restored = JSON.parse(localStorage.getItem(keys[idx]));
+    const preBackupKey = 'gl_backup_' + new Date().toISOString().replace(/[:.]/g,'-') + '_prerestore';
+    localStorage.setItem(preBackupKey, JSON.stringify(data));
+    data = restored;
+    saveData();
+    loadData();
+    alert('Sauvegarde restaur\u00e9e. Une sauvegarde pr\u00e9-restauration a aussi \u00e9t\u00e9 cr\u00e9\u00e9e.');
+  } catch(e) {
+    alert('Erreur \u00e0 la restauration : ' + (e.message || e));
+  }
+}
+
 function importJSON(e) {
   const file = e.target.files[0]; if(!file) return;
   const reader = new FileReader();
@@ -4995,15 +5244,21 @@ function importJSON(e) {
     try {
       const imported = JSON.parse(ev.target.result);
       if(!imported.proprios) { alert('Format non reconnu. Utilisez un fichier export\u00e9 depuis cette application.'); return; }
-      // #14 Sauvegarde automatique des donn\u00e9es actuelles avant import
+      // #30 Validation et nettoyage des r\u00e9f\u00e9rences crois\u00e9es
+      const { data: cleaned, report } = validateImportedData(imported);
+      if (!cleaned) { alert('Fichier corrompu : ' + report); return; }
+      // #14 Sauvegarde automatique
       try {
         const backupKey = 'gl_backup_' + new Date().toISOString().replace(/[:.]/g,'-') + '_' + (getStorageKey() || 'default');
         localStorage.setItem(backupKey, JSON.stringify(data));
       } catch(bk) { console.warn('Backup local non cr\u00e9\u00e9:', bk); }
-      if (!confirm('Vos donn\u00e9es actuelles seront remplac\u00e9es par celles du fichier.\n\nUne sauvegarde de vos donn\u00e9es actuelles a \u00e9t\u00e9 cr\u00e9\u00e9e en m\u00e9moire locale (gl_backup_*).\n\nContinuer ?')) return;
-      data = imported; saveData(); loadData();
-      alert('Donn\u00e9es import\u00e9es !');
-    } catch(err) { alert('Erreur: fichier JSON invalide'); }
+      if (!confirm('Vos donn\u00e9es actuelles seront remplac\u00e9es.\n\n' + report + '\n\nUne sauvegarde a \u00e9t\u00e9 cr\u00e9\u00e9e (gl_backup_*).\n\nContinuer ?')) return;
+      data = cleaned; saveData(); loadData();
+      alert('Donn\u00e9es import\u00e9es !' + (report ? '\n\n' + report : ''));
+    } catch(err) {
+      // #55 Message d'erreur d\u00e9taill\u00e9
+      alert('Erreur \u00e0 la lecture du fichier JSON :\n' + (err.message || err));
+    }
   };
   reader.readAsText(file);
 }
@@ -6183,6 +6438,9 @@ function envoyerRelance(bailId, mois, annee) {
 function logRelance(bailId, mois, annee, emailDestinataire) {
   if (!data.paiements) data.paiements = [];
   const moisNum = (typeof mois === 'number') ? mois : (MOIS_NUM[mois] || 0);
+  // #26 Rejeter les entr\u00e9es avec mois invalide (\u00e9viterait des paiements mois=0 inaccessibles)
+  if (moisNum < 1 || moisNum > 12) { console.error('logRelance: moisNum invalide', moisNum); return; }
+  if (!bailId || !annee) { console.error('logRelance: bailId ou annee manquants'); return; }
   let p = data.paiements.find(x => x.bailId === bailId && x.mois === moisNum && x.annee === annee);
   if (!p) {
     p = { bailId, mois: moisNum, annee: annee, statut: 'impaye', relances: [] };
@@ -6238,13 +6496,25 @@ function collectImpayes() {
           mois: m, annee: y, montant,
           dateEcheance: dateEch,
           retardJours,
-          derniereRelance
+          derniereRelance,
+          // #52 Compteur total de relances
+          relancesCount: (() => {
+            const p = (data.paiements || []).find(x => x.bailId === bail.id && x.mois === m && x.annee === y);
+            return (p && p.relances) ? p.relances.length : 0;
+          })()
         });
       }
     }
   });
   impayes.sort((a, b) => b.retardJours - a.retardJours);
   return impayes;
+}
+
+// #53 Debounce pour \u00e9viter les re-rendus rapides
+let _debouncedImpayesTimer = null;
+function debouncedRenderImpayes() {
+  if (_debouncedImpayesTimer) clearTimeout(_debouncedImpayesTimer);
+  _debouncedImpayesTimer = setTimeout(renderImpayes, 150);
 }
 
 function renderImpayes() {
@@ -6317,13 +6587,14 @@ function renderImpayes() {
     // Couleur retard
     const retardColor = retardJours >= 60 ? 'var(--danger)' : retardJours >= 30 ? 'var(--warning)' : 'var(--text-light)';
     const retardBg = retardJours >= 60 ? 'rgba(239,68,68,0.12)' : retardJours >= 30 ? 'rgba(245,158,11,0.12)' : 'rgba(0,0,0,0.04)';
-    // Dernière relance
+    // Dernière relance + compteur (#52)
     let relanceInfo;
     if (derniereRelance) {
       const relDate = new Date(derniereRelance.date);
       const relDays = Math.floor((Date.now() - relDate.getTime()) / 86400000);
-      relanceInfo = `<div style="font-size:12px;color:var(--text);">${relDate.toLocaleDateString('fr-FR', {day:'2-digit',month:'short',year:'numeric'})}</div>
-        <div style="font-size:10px;color:var(--text-muted);">il y a ${relDays} j</div>`;
+      const countLabel = item.relancesCount > 1 ? `${item.relancesCount} relances` : '1 relance';
+      relanceInfo = `<div style="font-size:12px;color:var(--text);font-weight:600;">${countLabel}</div>
+        <div style="font-size:11px;color:var(--text-muted);">Dernière : ${relDate.toLocaleDateString('fr-FR', {day:'2-digit',month:'short'})} (il y a ${relDays} j)</div>`;
     } else {
       relanceInfo = '<span style="color:var(--text-muted);font-style:italic;font-size:12px;">Jamais</span>';
     }
@@ -6352,11 +6623,14 @@ function renderImpayes() {
 // Marque un paiement comme payé (depuis la page impayés)
 function marquerPaye(bailId, mois, annee) {
   const moisNum = (typeof mois === 'number') ? mois : (MOIS_NUM[mois] || 0);
+  if (moisNum < 1 || moisNum > 12) return; // #26
   const idx = data.paiements.findIndex(x => x.bailId === bailId && x.mois === moisNum && x.annee === annee);
+  const nowIso = new Date().toISOString();
   if (idx >= 0) {
     data.paiements[idx].statut = 'paye';
+    data.paiements[idx].dateEnregistrement = nowIso; // #50
   } else {
-    data.paiements.push({ bailId, mois: moisNum, annee, statut: 'paye' });
+    data.paiements.push({ bailId, mois: moisNum, annee, statut: 'paye', dateEnregistrement: nowIso });
   }
   const _bail = data.baux.find(x => x.id === bailId);
   const _loc = _bail ? data.locataires.find(x => x.id === _bail.locId) : null;
@@ -6567,15 +6841,24 @@ function wrapBase64(b64, lineLen) {
 }
 
 function buildMimeMessage(to, subject, bodyText, pdfBase64, pdfFilename, cc) {
+  // #38 Guard null/undefined pdfBase64
+  if (!pdfBase64 || typeof pdfBase64 !== 'string') {
+    throw new Error('PDF manquant ou invalide, email non construit');
+  }
+  if (!to) throw new Error('Destinataire manquant');
   const boundary = 'boundary_' + Date.now();
-  const bodyB64 = wrapBase64(btoa(unescape(encodeURIComponent(bodyText))));
+  const bodyB64 = wrapBase64(btoa(unescape(encodeURIComponent(bodyText || ''))));
   const pdfB64Wrapped = wrapBase64(pdfBase64);
   const headers = [
     'MIME-Version: 1.0',
     'To: ' + to
   ];
-  if (cc && cc.trim()) headers.push('Cc: ' + cc.trim());
-  headers.push('Subject: =?UTF-8?B?' + btoa(unescape(encodeURIComponent(subject))) + '?=');
+  // #44 Normaliser CC : accepter virgules ET points-virgules, produire une liste RFC-compliant
+  if (cc && cc.trim()) {
+    const ccList = cc.split(/[;,]/).map(s => s.trim()).filter(Boolean).join(', ');
+    if (ccList) headers.push('Cc: ' + ccList);
+  }
+  headers.push('Subject: =?UTF-8?B?' + btoa(unescape(encodeURIComponent(subject || ''))) + '?=');
   headers.push('Content-Type: multipart/mixed; boundary="' + boundary + '"');
   const lines = headers.concat([
     '',
@@ -6608,14 +6891,25 @@ async function envoyerUnEmail(idx) {
   let sujet = sujetEl.value.trim();
   const corps = corpsEl.value;
 
-  // Test mode: override recipient and prefix subject
+  // #39 Test mode : refuser l'envoi si l'adresse de test est vide
   if (window._emailTestMode) {
     const testAddr = (document.getElementById('email-test-address')?.value || '').trim();
-    if (testAddr) to = testAddr;
+    if (!testAddr) {
+      if (statusEl) { statusEl.textContent = '\u2717 Adresse test requise'; statusEl.style.background = 'rgba(239,68,68,0.1)'; statusEl.style.color = 'var(--danger)'; }
+      return false;
+    }
+    to = testAddr;
     if (!sujet.startsWith('[TEST]')) sujet = '[TEST] ' + sujet;
   }
 
   if (!to) { if (statusEl) { statusEl.textContent = 'Pas d\'email'; statusEl.style.background = 'rgba(239,68,68,0.1)'; statusEl.style.color = 'var(--danger)'; } return false; }
+
+  // #37 Validation format email
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRe.test(to)) {
+    if (statusEl) { statusEl.textContent = '\u2717 Email invalide'; statusEl.style.background = 'rgba(239,68,68,0.1)'; statusEl.style.color = 'var(--danger)'; }
+    return false;
+  }
 
   statusEl.textContent = 'G\u00e9n\u00e9ration PDF...';
   statusEl.style.background = 'rgba(108,92,231,0.1)';
@@ -6664,8 +6958,11 @@ async function envoyerUnEmail(idx) {
     saveData();
     return true;
   } catch(e) {
+    // #55 Message d'erreur d\u00e9taill\u00e9 dans la console + tooltip sur le status
     console.error('Email error:', e);
-    statusEl.textContent = '\u2717 ' + (e.message || 'Erreur').substring(0, 40);
+    const msg = (e && e.message) ? e.message : String(e);
+    statusEl.textContent = '\u2717 ' + msg.substring(0, 40);
+    statusEl.title = msg; // tooltip au survol pour voir l'erreur compl\u00e8te
     statusEl.style.background = 'rgba(239,68,68,0.1)';
     statusEl.style.color = 'var(--danger)';
     return false;
