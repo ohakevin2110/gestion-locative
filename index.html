@@ -1631,7 +1631,14 @@ function openBienFiche(bienId) {
     html += '<div style="margin-top:10px;">';
     html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:4px;"><span>' + fmt(montantOriginal - crdBanque) + ' rembours\u00e9</span><span>' + pctRemb + '%</span></div>';
     html += '<div style="height:6px;background:#E8E8EC;border-radius:4px;overflow:hidden;"><div style="height:100%;width:' + pctRemb + '%;background:linear-gradient(90deg,var(--success),var(--accent));border-radius:4px;"></div></div>';
-    if (restantes > 0) html += '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">' + restantes + ' \u00e9ch\u00e9ance' + (restantes>1?'s':'') + ' restante' + (restantes>1?'s':'') + '</div>';
+    if (restantes > 0) {
+      const anneesRestantes = Math.floor(restantes / 12);
+      const moisRestants = restantes % 12;
+      let dureeRestanteStr = '';
+      if (anneesRestantes > 0) dureeRestanteStr += anneesRestantes + ' an' + (anneesRestantes > 1 ? 's' : '');
+      if (moisRestants > 0) dureeRestanteStr += (anneesRestantes > 0 ? ' et ' : '') + moisRestants + ' mois';
+      html += '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">' + restantes + ' \u00e9ch\u00e9ance' + (restantes>1?'s':'') + ' restante' + (restantes>1?'s':'') + ' \u2014 <strong style="color:var(--accent);">' + dureeRestanteStr + '</strong></div>';
+    }
     html += '</div>';
     // Buttons
     html += '<div style="margin-top:10px;display:flex;gap:8px;">';
