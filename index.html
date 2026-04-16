@@ -1777,6 +1777,34 @@ function openBienFiche(bienId) {
   }
   html += '</div></div>';
 
+  // ── Générer documents pour ce bien ──
+  if (bauxActifs.length) {
+    html += '<div class="card"><div class="card-header"><h3>📄 Générer documents</h3></div><div class="card-body">';
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:14px;">';
+    html += '<div class="form-group"><label>Type</label><select id="fiche-gen-type" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;"><option value="quittance">Quittance</option><option value="avis">Avis d\'échéance</option><option value="combine">Quittance + Avis</option></select></div>';
+    html += '<div class="form-group"><label>Mois</label><select id="fiche-gen-mois" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;">';
+    const moisNomsFiche = ['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+    for (let m = 1; m <= 12; m++) {
+      html += '<option value="' + moisNomsFiche[m] + '"' + (m === cm ? ' selected' : '') + '>' + moisNomsFiche[m] + '</option>';
+    }
+    html += '</select></div>';
+    html += '<div class="form-group"><label>Année</label><select id="fiche-gen-annee" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;"><option value="' + cy + '" selected>' + cy + '</option><option value="' + (cy-1) + '">' + (cy-1) + '</option></select></div>';
+    html += '<div class="form-group"><label>Bail</label><select id="fiche-gen-bail" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;"><option value="all">Tous les baux de ce bien</option>';
+    bauxActifs.forEach(function(b) {
+      var loc = data.locataires.find(function(x) { return x.id === b.locId; });
+      var locNom = loc ? ((loc.prenom||'') + ' ' + loc.nom).trim() : b.locId;
+      html += '<option value="' + b.id + '">' + locNom + ' (' + b.id + ')</option>';
+    });
+    html += '</select></div>';
+    html += '</div>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+    html += '<button class="btn btn-success btn-sm" onclick="genererDocumentsFiche(\'' + bienId + '\')">📥 Télécharger</button>';
+    html += '<button class="btn btn-sm" onclick="genererDocumentsFicheDrive(\'' + bienId + '\')" style="background:#1A1A2E;color:white;">☁ Archiver sur Drive</button>';
+    html += '</div>';
+    html += '<div id="fiche-gen-result" style="margin-top:10px;"></div>';
+    html += '</div></div>';
+  }
+
   document.getElementById('fiche-bien-content').innerHTML = html;
 }
 
@@ -3342,6 +3370,62 @@ function saveBail() {
 
 
 // ── PDF GENERATION ──
+function genererDocumentsFiche(bienId) {
+  // Set the main form values from fiche fields, then call genererDocuments
+  const type = document.getElementById('fiche-gen-type').value;
+  const mois = document.getElementById('fiche-gen-mois').value;
+  const annee = document.getElementById('fiche-gen-annee').value;
+  const bailSel = document.getElementById('fiche-gen-bail').value;
+  // Temporarily set gen-* values
+  document.getElementById('gen-type').value = type;
+  document.getElementById('gen-mois').value = mois;
+  document.getElementById('gen-annee').value = annee;
+  document.getElementById('gen-proprio').value = 'all';
+  if (bailSel === 'all') {
+    // Generate for all active baux of this bien
+    const bauxBien = data.baux.filter(b => b.bienId === bienId && b.statut === 'Actif');
+    document.getElementById('gen-bail').value = 'all';
+    // Override genererDocuments filtering
+    const origBaux = data.baux;
+    const filteredBaux = bauxBien.map(b => Object.assign({}, b));
+    // Use bail filter: generate one by one
+    let count = 0;
+    bauxBien.forEach(b => {
+      document.getElementById('gen-bail').value = b.id;
+      genererDocuments();
+      count++;
+    });
+    document.getElementById('fiche-gen-result').innerHTML = '<div style="color:var(--success);font-size:13px;font-weight:600;">✓ ' + count + ' document(s) généré(s)</div>';
+    return;
+  }
+  document.getElementById('gen-bail').value = bailSel;
+  genererDocuments();
+  document.getElementById('fiche-gen-result').innerHTML = '<div style="color:var(--success);font-size:13px;font-weight:600;">✓ Document généré</div>';
+}
+
+async function genererDocumentsFicheDrive(bienId) {
+  const type = document.getElementById('fiche-gen-type').value;
+  const mois = document.getElementById('fiche-gen-mois').value;
+  const annee = document.getElementById('fiche-gen-annee').value;
+  const bailSel = document.getElementById('fiche-gen-bail').value;
+  document.getElementById('gen-type').value = type;
+  document.getElementById('gen-mois').value = mois;
+  document.getElementById('gen-annee').value = annee;
+  document.getElementById('gen-proprio').value = 'all';
+  if (bailSel === 'all') {
+    const bauxBien = data.baux.filter(b => b.bienId === bienId && b.statut === 'Actif');
+    for (const b of bauxBien) {
+      document.getElementById('gen-bail').value = b.id;
+      await genererDocumentsDrive();
+    }
+    document.getElementById('fiche-gen-result').innerHTML = '<div style="color:var(--success);font-size:13px;font-weight:600;">✓ ' + bauxBien.length + ' document(s) archivé(s) sur Drive</div>';
+    return;
+  }
+  document.getElementById('gen-bail').value = bailSel;
+  await genererDocumentsDrive();
+  document.getElementById('fiche-gen-result').innerHTML = '<div style="color:var(--success);font-size:13px;font-weight:600;">✓ Document archivé sur Drive</div>';
+}
+
 function genererDocuments() {
   const type = gv('gen-type');
   const mois = gv('gen-mois');
