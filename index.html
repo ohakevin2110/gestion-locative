@@ -113,6 +113,23 @@ body {
 .nav-item.active svg { opacity: 1; }
 .nav-item .badge { margin-left: auto; background: var(--accent); color: white; font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600; }
 .sidebar-bottom { padding: 16px 24px; border-top: 1px solid var(--border); }
+/* Boutons bas de sidebar : adapt\u00e9s \u00e0 un fond clair (et dark mode via var) */
+.sidebar-btn {
+  width: 100%; margin-top: 8px; padding: 9px 12px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text-light);
+  font-size: 12px; font-weight: 500; font-family: inherit;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: all 0.15s;
+}
+.sidebar-btn:hover { background: var(--glass-hover); color: var(--text); border-color: var(--accent); }
+.sidebar-btn-danger {
+  margin-top: 10px; padding: 10px 12px; font-size: 13px; font-weight: 600;
+  background: var(--danger-light); color: var(--danger); border-color: rgba(231,76,60,0.25);
+}
+.sidebar-btn-danger:hover { background: rgba(231,76,60,0.18); color: var(--danger); border-color: var(--danger); }
+body.dark-mode .sidebar-btn { background: var(--glass-hover); color: var(--text-light); border-color: var(--border); }
+body.dark-mode .sidebar-btn:hover { background: var(--glass-strong); color: var(--text); border-color: var(--accent); }
 .sidebar-user { display: flex; align-items: center; gap: 10px; }
 .sidebar-user .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: white; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex-shrink: 0; }
 .sidebar-user .name { font-size: 13px; font-weight: 600; }
@@ -809,9 +826,9 @@ input, select, textarea {
         <div class="email" id="sidebar-email"></div>
       </div>
     </div>
-    <button onclick="openDataOwnerModal()" id="btn-data-owner" title="Partager / accéder à des données d'un autre compte" style="width:100%;margin-top:10px;padding:8px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:8px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.8);font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.12)'" onmouseout="this.style.background='rgba(255,255,255,0.04)'"><span>👥</span><span>Accès partagé</span></button>
-    <button onclick="toggleDarkMode()" id="btn-dark-mode" title="Basculer le mode clair/sombre" style="width:100%;margin-top:8px;padding:8px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:8px;background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.8);font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.12)'" onmouseout="this.style.background='rgba(255,255,255,0.04)'"><span id="dark-mode-icon">🌙</span><span id="dark-mode-label">Mode sombre</span></button>
-    <button onclick="handleLogout()" style="width:100%;margin-top:10px;padding:10px 12px;border:1px solid rgba(231,76,60,0.45);border-radius:8px;background:rgba(231,76,60,0.15);color:#fff;font-size:13px;font-weight:600;letter-spacing:0.2px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(231,76,60,0.35)';this.style.borderColor='rgba(231,76,60,0.8)'" onmouseout="this.style.background='rgba(231,76,60,0.15)';this.style.borderColor='rgba(231,76,60,0.45)'"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Déconnexion</button>
+    <button onclick="openDataOwnerModal()" id="btn-data-owner" title="Partager / accéder à des données d'un autre compte" class="sidebar-btn"><span>👥</span><span>Accès partagé</span></button>
+    <button onclick="toggleDarkMode()" id="btn-dark-mode" title="Basculer le mode clair/sombre" class="sidebar-btn"><span id="dark-mode-icon">🌙</span><span id="dark-mode-label">Mode sombre</span></button>
+    <button onclick="handleLogout()" class="sidebar-btn sidebar-btn-danger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Déconnexion</button>
   </div>
 </div>
 
