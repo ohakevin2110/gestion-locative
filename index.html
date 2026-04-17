@@ -2035,17 +2035,28 @@ function renderMonMois() {
     </div>
   </div>`;
 
-  // Impayés section
-  if (impayes.length) {
-    html += `<div class="monmois-section-title">&#x1F6A8; Paiements en attente (${impayes.length})</div>`;
-    impayes.forEach(({ bail, loc, bien, montant }) => {
-      html += `<div class="monmois-action-card" onclick="navigateTo('paiements')">
+  // Impay\u00e9s section \u2014 vue par locataire (tous mois impay\u00e9s, pas seulement le mois courant)
+  const impayesParLoc = (typeof collectImpayesParLocataire === 'function') ? collectImpayesParLocataire() : [];
+  if (impayesParLoc.length) {
+    const nbLocataires = impayesParLoc.length;
+    const nbEcheances = impayesParLoc.reduce((s, g) => s + g.echeances.length, 0);
+    html += `<div class="monmois-section-title">&#x1F6A8; Impay\u00e9s \u2014 ${nbLocataires} locataire${nbLocataires>1?'s':''} (${nbEcheances} \u00e9ch\u00e9ance${nbEcheances>1?'s':''})</div>`;
+    impayesParLoc.forEach(g => {
+      const locNom = g.loc ? getLocataireName(g.loc) : 'Locataire';
+      const nbEch = g.echeances.length;
+      const retardLbl = g.retardMax >= 60 ? 'Retard max : ' + g.retardMax + ' j \u26A0' : 'Retard max : ' + g.retardMax + ' j';
+      const retardColor = g.retardMax >= 60 ? 'var(--danger)' : g.retardMax >= 30 ? 'var(--warning)' : 'var(--text-muted)';
+      const bienNom = g.bien ? g.bien.designation : '';
+      const subLine = bienNom
+        + (nbEch > 1 ? ' \u00B7 ' + nbEch + ' \u00e9ch\u00e9ances impay\u00e9es' : ' \u00B7 ' + nbEch + ' \u00e9ch\u00e9ance impay\u00e9e')
+        + ' \u00B7 <span style="color:' + retardColor + ';font-weight:600;">' + retardLbl + '</span>';
+      html += `<div class="monmois-action-card" onclick="navigateTo('impayes')">
         <div class="action-icon" style="background:var(--danger-light);color:var(--danger)">&#x1F4B3;</div>
         <div class="action-content">
-          <div class="action-title">${loc ? (loc.prenom||'')+' '+loc.nom : 'Locataire'}</div>
-          <div class="action-sub">${bien ? bien.designation : ''}</div>
+          <div class="action-title">${locNom}</div>
+          <div class="action-sub">${subLine}</div>
         </div>
-        <div class="action-badge" style="background:var(--danger-light);color:var(--danger)">${fmt(montant)}</div>
+        <div class="action-badge" style="background:var(--danger-light);color:var(--danger);">${fmt(g.totalMontant)}</div>
       </div>`;
     });
   }
@@ -3182,6 +3193,25 @@ function toggleDepotRecu(bailId) {
   renderLocataires();
 }
 
+// \u00c9dition rapide du montant du d\u00e9p\u00f4t (via prompt, sans ouvrir tout le modal bail)
+function editDepotMontant(bailId) {
+  const b = data.baux.find(x => x.id === bailId);
+  if (!b) return;
+  const ancien = b.depot || 0;
+  const saisie = prompt('Nouveau montant du d\u00e9p\u00f4t de garantie (\u20ac) :', ancien);
+  if (saisie === null) return; // annul\u00e9
+  const nouveau = parseFloat(String(saisie).replace(',', '.'));
+  if (isNaN(nouveau) || nouveau < 0) { alert('Montant invalide. Saisis un nombre positif.'); return; }
+  if (nouveau === ancien) return;
+  b.depot = nouveau;
+  const _loc = data.locataires.find(x => x.id === b.locId);
+  const _bien = data.biens.find(x => x.id === b.bienId);
+  logActivity({ type: 'bail', proprioId: b.proprioId, locataireId: b.locId, bailId: b.id, bienId: b.bienId,
+    details: 'D\u00e9p\u00f4t de garantie modifi\u00e9 : ' + fmt(ancien) + ' \u2192 ' + fmt(nouveau) + (_bien?' ('+_bien.designation+')':'') + (_loc ? ' - ' + getLocataireName(_loc) : '') });
+  saveData();
+  renderLocataires();
+}
+
 function renderLocataires() {
   const tb = document.querySelector('#table-locataires tbody');
   if (!tb) return;
@@ -3262,15 +3292,16 @@ function renderLocataires() {
       const depotMontant = bailPrincipal.depot || 0;
       const depotRecu = !!bailPrincipal.depotRecu;
       const eBailId = escapeHtml(bailPrincipal.id);
+      const editDepotBtn = `<button onclick="editDepotMontant('${eBailId}')" title="Modifier le montant du d\u00e9p\u00f4t" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:11px;padding:0;margin-left:4px;vertical-align:middle;">\u270E</button>`;
       if (depotMontant > 0) {
         const badgeStyle = depotRecu
           ? 'background:rgba(0,179,126,0.12);color:var(--success);border:1px solid rgba(0,179,126,0.3);'
           : 'background:rgba(245,158,11,0.12);color:var(--warning);border:1px solid rgba(245,158,11,0.3);';
         const badgeLabel = depotRecu ? '\u2713 Re\u00e7u' : '\u26A0 \u00c0 r\u00e9clamer';
-        depotCell = `<div style="font-weight:600;">${fmt(depotMontant)}</div>`
+        depotCell = `<div style="font-weight:600;">${fmt(depotMontant)}${editDepotBtn}</div>`
           + `<button onclick="toggleDepotRecu('${eBailId}')" title="Basculer le statut du d\u00e9p\u00f4t" style="margin-top:3px;font-size:10px;padding:2px 8px;border-radius:6px;cursor:pointer;${badgeStyle}">${badgeLabel}</button>`;
       } else {
-        depotCell = '<span style="color:var(--text-muted);font-style:italic;font-size:11px;">Non d\u00e9fini</span>';
+        depotCell = `<span style="color:var(--text-muted);font-style:italic;font-size:11px;">Non d\u00e9fini</span>${editDepotBtn}`;
       }
 
       periodeCell = `<div style="font-size:12px;">${fmtDate(bailPrincipal.debut) || '?'}</div>`
@@ -3298,8 +3329,12 @@ function renderLocataires() {
     const expandBtn = hasHisto
       ? `<button class="btn btn-sm" onclick="toggleLocataireBauxExpander('${eId}')" title="${expanded ? 'Masquer' : 'Voir'} tous les baux de ce locataire" style="background:#f5f5f5;color:var(--text-light);border:1px solid var(--border);font-size:11px;padding:5px 10px;">${expanded ? '▲' : '▼'} ${bauxLoc.length}</button>`
       : '';
+    const editBailBtn = bailPrincipal
+      ? `<button class="btn btn-sm" onclick="openModal('bail','${escapeHtml(bailPrincipal.id)}')" title="Modifier ce bail (loyer, d\u00e9p\u00f4t, dates, statut\u2026)" style="background:#f5f5f5;color:var(--text-light);border:1px solid var(--border);">\u270E Bail</button>`
+      : '';
     const actionsCell = `<div style="white-space:nowrap;display:flex;gap:4px;flex-wrap:wrap;">
       ${expandBtn}
+      ${editBailBtn}
       <button class="btn btn-sm" style="background:var(--accent);color:white;" onclick="openLocataireFiche('${eId}')">Fiche</button>
       <button class="btn btn-danger btn-sm" onclick="deleteLocataire('${eId}')">Suppr.</button>
     </div>`;
@@ -3339,6 +3374,7 @@ function renderLocataires() {
               <span style="color:var(--text-muted);">${fmtDate(b.debut) || '?'} → ${fmtDate(b.fin) || 'sans fin'}</span>
               <span style="font-weight:600;">${fmt(loyerBase)} ${loyerLabel}</span>
               <span style="padding:2px 8px;border-radius:6px;background:${statutBg};color:${statutColor};font-size:11px;font-weight:600;">${eStatut}</span>
+              <button class="btn btn-sm" onclick="openModal('bail','${eBailId}')" title="Modifier ce bail" style="background:var(--glass-hover);color:var(--text-light);border:1px solid var(--border);font-size:10px;padding:3px 8px;margin-left:auto;">\u270E Modifier</button>
             </div>
           </td>
         </tr>`;
@@ -3500,6 +3536,28 @@ function getLocataireName(loc) {
   const nom = (loc.nom || '').trim();
   if (prenom && nom) return prenom + ' ' + nom;
   return prenom || nom || '';
+}
+
+// Retourne 1 ou 2 initiales robustes pour un locataire (g\u00e8re particuliers ET soci\u00e9t\u00e9s, et cas o\u00f9 pr\u00e9nom ou nom est vide).
+function getLocataireInitials(loc) {
+  if (!loc) return '?';
+  const societe = ['Soci\u00e9t\u00e9','SCI','SARL','SAS','EURL','SASU'];
+  const isSoc = (loc.type === 'Soci\u00e9t\u00e9') || societe.includes(loc.civilite);
+  if (isSoc) {
+    // Soci\u00e9t\u00e9 : 2 premi\u00e8res lettres de la raison sociale (champ nom)
+    const rs = (loc.nom || loc.raisonsociale || '').trim().replace(/\s+/g, ' ');
+    if (!rs) return '?';
+    const parts = rs.split(' ').filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return rs.substring(0, 2).toUpperCase();
+  }
+  // Particulier : initiale pr\u00e9nom + initiale nom, avec fallback si l'un des deux est vide
+  const p = (loc.prenom || '').trim();
+  const n = (loc.nom || '').trim();
+  if (p && n) return (p[0] + n[0]).toUpperCase();
+  if (p) return p.substring(0, 2).toUpperCase();
+  if (n) return n.substring(0, 2).toUpperCase();
+  return '?';
 }
 
 // Retourne les trimestres (array de mois 1..12) d'un bail, selon sa config
@@ -3759,7 +3817,7 @@ function renderPaiements() {
         // Header du bail (ligne plate : avatar + locataire/bien à gauche, KPIs inline + barre à droite)
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:12px;">' +
           '<div style="display:flex;align-items:center;gap:12px;min-width:0;">' +
-            '<div class="paiement-avatar">' + (loc ? (loc.prenom||'')[0] + (loc.nom||'')[0] : '?').toUpperCase() + '</div>' +
+            '<div class="paiement-avatar">' + getLocataireInitials(loc) + '</div>' +
             '<div style="min-width:0;">' +
               '<div style="font-weight:600;font-size:14px;"><a href="#" onclick="event.preventDefault();openLocataireFiche(\'' + bail.locId + '\')" style="color:var(--text);text-decoration:none;">' + locNom + '</a>' +
                 ' <span style="color:var(--text-muted);font-weight:400;">· ' + bienEmoji(bien ? bien.type : '') + ' ' + bienNom + ' · ' + bail.id + (isTrim ? ' · <span style="color:var(--warning);font-weight:600;">Trimestriel</span>' : '') + '</span>' +
@@ -4249,29 +4307,67 @@ function openModal(type, editId) {
     footer.innerHTML = `<button class="btn btn-outline" onclick="closeModal()">Annuler</button><button class="btn btn-success" onclick="saveLocataire()">Enregistrer</button>`;
   }
   else if (type === 'bail') {
-    title.textContent = 'Ajouter un bail';
+    const existingBail = editId ? data.baux.find(x => x.id === editId) : null;
+    const eb = existingBail || {};
+    title.textContent = existingBail ? 'Modifier le bail ' + existingBail.id : 'Ajouter un bail';
     const bienOpts = data.biens.map(b=>{
       const pr = data.proprios.find(x=>x.id===b.proprioId);
-      return `<option value="${b.id}" data-proprio="${b.proprioId||''}">${b.designation} (${b.type}) - ${pr?pr.nom:'?'}</option>`;
+      const sel = existingBail && existingBail.bienId === b.id ? ' selected' : '';
+      return `<option value="${b.id}" data-proprio="${b.proprioId||''}"${sel}>${b.designation} (${b.type}) - ${pr?pr.nom:'?'}</option>`;
     }).join('');
-    const locOpts = data.locataires.map(l=>`<option value="${l.id}">${l.civilite} ${l.prenom} ${l.nom}</option>`).join('');
+    const locOpts = data.locataires.map(l=>{
+      const sel = existingBail && existingBail.locId === l.id ? ' selected' : '';
+      return `<option value="${l.id}"${sel}>${l.civilite||''} ${l.prenom||''} ${l.nom||''}</option>`;
+    }).join('');
+    const perioLoyer = eb.periodiciteLoyer || 'mensuelle';
+    const perioCharges = eb.periodiciteCharges || 'mensuelle';
+    const chargesMontant = perioCharges === 'trimestrielle' ? (eb.chargesTrimestrielles||0) : (eb.charges||0);
+    const statuts = ['Actif','Résilié','En attente','Terminé','Expiré'];
+    const statutOpts = statuts.map(s => `<option value="${s}"${(eb.statut||'Actif')===s?' selected':''}>${s}</option>`).join('');
+    const perioLoyerOpts = `<option value="mensuelle"${perioLoyer==='mensuelle'?' selected':''}>Mensuelle</option><option value="trimestrielle"${perioLoyer==='trimestrielle'?' selected':''}>Trimestrielle</option>`;
+    const perioChargesOpts = `<option value="mensuelle"${perioCharges==='mensuelle'?' selected':''}>Mensuelle</option><option value="trimestrielle"${perioCharges==='trimestrielle'?' selected':''}>Trimestrielle</option><option value="annuelle"${perioCharges==='annuelle'?' selected':''}>Annuelle</option>`;
+    const trimestres = eb.trimestres || '1,4,7,10';
+    const trimOpts = ['1,4,7,10','2,5,8,11','3,6,9,12'].map(t => {
+      const labels = { '1,4,7,10':'Jan / Avr / Juil / Oct', '2,5,8,11':'Fév / Mai / Août / Nov', '3,6,9,12':'Mars / Juin / Sept / Déc' };
+      return `<option value="${t}"${trimestres===t?' selected':''}>${labels[t]}</option>`;
+    }).join('');
+    const trimDisplay = (perioLoyer === 'trimestrielle' || perioCharges === 'trimestrielle') ? '' : 'display:none;';
+    const depotRecuChecked = eb.depotRecu ? 'checked' : '';
+    const depotRecuSection = existingBail ? `
+      <div class="form-row"><div class="form-group" style="flex-direction:row;align-items:center;gap:10px;">
+        <input type="checkbox" id="m-ba-depotrecu" ${depotRecuChecked} style="width:18px;height:18px;cursor:pointer;">
+        <label for="m-ba-depotrecu" style="margin:0;text-transform:none;letter-spacing:0;font-size:13px;cursor:pointer;color:var(--text);">Dépôt de garantie reçu du locataire</label>
+      </div></div>` : '';
     body.innerHTML = `
       <div class="form-row"><div class="form-group"><label>Bien (le propriétaire est déduit automatiquement)</label><select id="m-ba-bien" onchange="fillBailProprio()">${bienOpts}</select></div></div>
       <div class="form-row"><div class="form-group"><label>Propriétaire (auto)</label><input id="m-ba-proprio-display" readonly style="background:#f0f0f0;color:var(--primary);font-weight:600;"></div>
       <div class="form-group"><label>Locataire</label><select id="m-ba-loc">${locOpts}</select></div></div>
-      <div class="form-row"><div class="form-group"><label>Date début</label><input id="m-ba-debut" type="date"></div>
-      <div class="form-group"><label>Date fin</label><input id="m-ba-fin" type="date"></div></div>
-      <div class="form-row"><div class="form-group"><label>Loyer HC (€)</label><input id="m-ba-loyer" type="number" step="0.01"></div>
-      <div class="form-group"><label>Périodicité loyer</label><select id="m-ba-perioloyer"><option value="mensuelle">Mensuelle</option><option value="trimestrielle">Trimestrielle</option></select></div>
-      <div class="form-group"><label>Dépôt de garantie (€)</label><input id="m-ba-depot" type="number" step="0.01"></div></div>
-      <div class="form-row"><div class="form-group"><label>Montant charges (€)</label><input id="m-ba-charges" type="number" step="0.01"></div>
-      <div class="form-group"><label>Périodicité charges</label><select id="m-ba-periocharges" onchange="document.getElementById('m-ba-trimestres-group').style.display = this.value==='trimestrielle' ? '' : 'none'"><option value="mensuelle">Mensuelle</option><option value="trimestrielle">Trimestrielle</option><option value="annuelle">Annuelle</option></select></div>
-      <div class="form-group" id="m-ba-trimestres-group" style="display:none;"><label>Trimestres (mois de facturation)</label><select id="m-ba-trimestres"><option value="1,4,7,10">Jan / Avr / Juil / Oct</option><option value="2,5,8,11">Fév / Mai / Août / Nov</option><option value="3,6,9,12">Mars / Juin / Sept / Déc</option></select></div></div>
-      <div class="form-row"><div class="form-group"><label>Jour d'échéance</label><input id="m-ba-jour" type="number" min="1" max="28" value="1"></div>
-      <div class="form-group"><label>Statut</label><select id="m-ba-statut"><option value="Actif">Actif</option><option value="Résilié">Résilié</option><option value="En attente">En attente</option><option value="Terminé">Terminé</option><option value="Expiré">Expiré</option></select></div></div>`;
-    footer.innerHTML = `<button class="btn btn-outline" onclick="closeModal()">Annuler</button><button class="btn btn-success" onclick="saveBail()">Enregistrer</button>`;
+      <div class="form-row"><div class="form-group"><label>Date début</label><input id="m-ba-debut" type="date" value="${eb.debut||''}"></div>
+      <div class="form-group"><label>Date fin</label><input id="m-ba-fin" type="date" value="${eb.fin||''}"></div></div>
+      <div class="form-row"><div class="form-group"><label>Loyer HC (€)</label><input id="m-ba-loyer" type="number" step="0.01" value="${eb.loyer!=null?eb.loyer:''}"></div>
+      <div class="form-group"><label>Périodicité loyer</label><select id="m-ba-perioloyer" onchange="toggleTrimestresVisibility()">${perioLoyerOpts}</select></div>
+      <div class="form-group"><label>Dépôt de garantie (€)</label><input id="m-ba-depot" type="number" step="0.01" value="${eb.depot!=null?eb.depot:''}"></div></div>
+      <div class="form-row"><div class="form-group"><label>Montant charges (€)</label><input id="m-ba-charges" type="number" step="0.01" value="${chargesMontant||''}"></div>
+      <div class="form-group"><label>Périodicité charges</label><select id="m-ba-periocharges" onchange="toggleTrimestresVisibility()">${perioChargesOpts}</select></div>
+      <div class="form-group" id="m-ba-trimestres-group" style="${trimDisplay}"><label>Trimestres (mois de facturation)</label><select id="m-ba-trimestres">${trimOpts}</select></div></div>
+      <div class="form-row"><div class="form-group"><label>Jour d'échéance</label><input id="m-ba-jour" type="number" min="1" max="28" value="${eb.jourEcheance||1}"></div>
+      <div class="form-group"><label>Statut</label><select id="m-ba-statut">${statutOpts}</select></div></div>
+      ${depotRecuSection}`;
+    if (existingBail) {
+      footer.innerHTML = `<button class="btn btn-outline" onclick="closeModal()">Annuler</button><button class="btn btn-success" onclick="updateBail('${editId}')">Enregistrer</button>`;
+    } else {
+      footer.innerHTML = `<button class="btn btn-outline" onclick="closeModal()">Annuler</button><button class="btn btn-success" onclick="saveBail()">Enregistrer</button>`;
+    }
     setTimeout(fillBailProprio, 50);
   }
+}
+
+// Affiche/masque le s\u00e9lecteur "Trimestres" selon la p\u00e9riodicit\u00e9 loyer/charges
+function toggleTrimestresVisibility() {
+  const pl = gv('m-ba-perioloyer');
+  const pc = gv('m-ba-periocharges');
+  const grp = document.getElementById('m-ba-trimestres-group');
+  if (grp) grp.style.display = (pl === 'trimestrielle' || pc === 'trimestrielle') ? '' : 'none';
 }
 
 function closeModal() { document.getElementById('modal').classList.remove('show'); }
@@ -4795,6 +4891,70 @@ function saveBail() {
     window._openBienFicheAfterSave = null;
     openBienFiche(returnBienId);
   }
+}
+
+// Met \u00e0 jour un bail existant (mode \u00e9dition du modal bail)
+function updateBail(bailId) {
+  const bail = data.baux.find(x => x.id === bailId);
+  if (!bail) { alert('Bail introuvable.'); return; }
+  const bienId = gv('m-ba-bien');
+  const bien = data.biens.find(x => x.id === bienId);
+  const proprioId = bien ? bien.proprioId : '';
+  if (!proprioId) { alert('Ce bien n\'a pas de propri\u00e9taire. Modifiez le bien d\'abord.'); return; }
+  const perioCharges = gv('m-ba-periocharges');
+  const perioLoyer = gv('m-ba-perioloyer') || 'mensuelle';
+  const chargesMontant = Math.max(0, parseFloat(gv('m-ba-charges'))||0);
+  const loyerMontant = Math.max(0, parseFloat(gv('m-ba-loyer'))||0);
+  const depotMontant = Math.max(0, parseFloat(gv('m-ba-depot'))||0);
+  const locId = gv('m-ba-loc');
+  const newDebut = gv('m-ba-debut'), newFin = gv('m-ba-fin');
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+  if (newDebut && !dateRe.test(newDebut)) { alert('Date de d\u00e9but invalide. Format attendu : AAAA-MM-JJ.'); return; }
+  if (newFin && !dateRe.test(newFin)) { alert('Date de fin invalide. Format attendu : AAAA-MM-JJ.'); return; }
+  if (newDebut && newFin && newDebut > newFin) { alert('La date de d\u00e9but doit \u00eatre ant\u00e9rieure \u00e0 la date de fin.'); return; }
+  let jourEch = parseInt(gv('m-ba-jour'));
+  if (isNaN(jourEch)) jourEch = 1;
+  jourEch = Math.max(1, Math.min(28, jourEch));
+  // Check chevauchement (en ignorant le bail courant)
+  const overlap = data.baux.find(b => {
+    if (b.id === bailId) return false;
+    if (b.bienId !== bienId || b.locId !== locId) return false;
+    const aD = b.debut || '0000-01-01', aF = b.fin || '9999-12-31';
+    const nD = newDebut || '0000-01-01', nF = newFin || '9999-12-31';
+    return !(nF < aD || nD > aF);
+  });
+  if (overlap) {
+    alert('Un autre bail pour ce bien et ce locataire existe d\u00e9j\u00e0 (' + overlap.id + ') sur une p\u00e9riode qui se chevauche. V\u00e9rifiez les dates.');
+    return;
+  }
+  const trimestresValue = (perioLoyer === 'trimestrielle' || perioCharges === 'trimestrielle') ? gv('m-ba-trimestres') : '';
+  // D\u00e9p\u00f4t re\u00e7u : checkbox pr\u00e9sente uniquement en mode \u00e9dition
+  const depotRecuEl = document.getElementById('m-ba-depotrecu');
+  const newDepotRecu = depotRecuEl ? !!depotRecuEl.checked : !!bail.depotRecu;
+  // Log les changements principaux
+  const changements = [];
+  if (bail.loyer !== loyerMontant) changements.push('loyer ' + fmt(bail.loyer||0) + ' \u2192 ' + fmt(loyerMontant));
+  if (bail.depot !== depotMontant) changements.push('d\u00e9p\u00f4t ' + fmt(bail.depot||0) + ' \u2192 ' + fmt(depotMontant));
+  if (!!bail.depotRecu !== newDepotRecu) changements.push('d\u00e9p\u00f4t ' + (newDepotRecu ? 'marqu\u00e9 re\u00e7u' : 'd\u00e9-marqu\u00e9'));
+  if (bail.statut !== gv('m-ba-statut')) changements.push('statut ' + (bail.statut||'?') + ' \u2192 ' + gv('m-ba-statut'));
+  // Applique les modifs
+  Object.assign(bail, {
+    proprioId: proprioId, bienId: bienId, locId: locId,
+    debut: newDebut, fin: newFin,
+    loyer: loyerMontant, periodiciteLoyer: perioLoyer,
+    charges: perioCharges==='mensuelle' ? chargesMontant : 0,
+    chargesTrimestrielles: perioCharges==='trimestrielle' ? chargesMontant : 0,
+    periodiciteCharges: perioCharges, trimestres: trimestresValue,
+    depot: depotMontant, jourEcheance: jourEch,
+    statut: gv('m-ba-statut'),
+    depotRecu: newDepotRecu,
+    depotRecuDate: newDepotRecu ? (bail.depotRecuDate || new Date().toISOString()) : ''
+  });
+  const _loc = data.locataires.find(x=>x.id===bail.locId);
+  const _bien = data.biens.find(x=>x.id===bail.bienId);
+  logActivity({ type: 'bail', proprioId: bail.proprioId, locataireId: bail.locId, bailId: bail.id, bienId: bail.bienId,
+    details: 'Bail modifi\u00e9' + (_bien?' ('+_bien.designation+')':'') + (_loc?' - '+((_loc.prenom||'')+' '+_loc.nom).trim():'') + (changements.length ? ' — ' + changements.join(', ') : '') });
+  saveData(); refreshAll(); closeModal();
 }
 
 
@@ -7331,7 +7491,7 @@ function renderEmailPreview() {
     // Header
     html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">';
     html += '<div style="display:flex;align-items:center;gap:10px;">';
-    html += '<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--teal));display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:13px;">' + ((eq.loc.prenom||'')[0]||'') + ((eq.loc.nom||'')[0]||'') + '</div>';
+    html += '<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--teal));display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:13px;">' + getLocataireInitials(eq.loc) + '</div>';
     html += '<div><div style="font-weight:700;font-size:14px;">' + locNom + '</div>';
     html += '<div style="font-size:12px;color:var(--text-muted);">' + bienEmj + ' ' + (eq.bien ? eq.bien.designation : '') + ' \u00B7 ' + eq.bail.id + '</div></div>';
     html += '</div>';
