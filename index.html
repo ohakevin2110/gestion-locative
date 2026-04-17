@@ -874,7 +874,7 @@ input, select, textarea {
 
   <div class="card">
     <div class="card-header"><h3>Impay&eacute;s en cours</h3></div>
-    <div class="card-body" style="overflow-x:auto;"><table id="table-impayes"><thead><tr><th>Locataire</th><th>Bien</th><th>Propriétaire</th><th>Période</th><th>Montant dû</th><th>Statut</th><th>Relance</th></tr></thead><tbody></tbody></table></div>
+    <div class="card-body" style="overflow-x:auto;"><table id="table-impayes"><thead><tr><th>Locataire</th><th>Bien(s)</th><th>Propriétaire</th><th>Échéances impayées</th><th class="money">Total dû</th><th>Retard max</th><th>Relance</th></tr></thead><tbody></tbody></table></div>
   </div>
   <div class="card">
     <div class="card-header">
@@ -3892,42 +3892,67 @@ function renderDashboard() {
 
   const moisNoms = ['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 
+  // Impay\u00e9s du dashboard : group\u00e9s par locataire, avec d\u00e9tail des \u00e9ch\u00e9ances.
+  // R\u00e9utilise collectImpayesParLocataire() (m\u00eame logique que la page Impay\u00e9s : tous mois, filtre montants \u00e0 0).
   const tb = document.querySelector('#table-impayes tbody');
-  let impayeRows = [];
-  actifs.forEach(b => {
-    const bien = data.biens.find(x=>x.id===b.bienId);
-    const loc = data.locataires.find(x=>x.id===b.locId);
-    const proprio = data.proprios.find(x=>x.id===b.proprioId);
-    for (let m = 1; m <= cm; m++) {
-      if (!isBailActifPourMois(b, m, cy)) continue;
-      if (getPaiementStatut(b.id, m, cy) !== 'paye') {
-        const montant = getMoisTotal(b, m);
-        const derniereRelance = getDerniereRelance(b.id, m, cy);
-        const hasEmail = loc && loc.email;
-        let relanceCell = '';
-        if (!hasEmail) {
-          relanceCell = `<span style="font-size:11px;color:var(--text-muted);font-style:italic;" title="Aucune adresse email renseignée sur ce locataire">Email manquant</span>`;
-        } else {
-          const btnLabel = derniereRelance ? 'Relancer à nouveau' : 'Relancer';
-          const btnTitle = derniereRelance
-            ? 'Dernière relance : ' + new Date(derniereRelance.date).toLocaleDateString('fr-FR', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})
-            : 'Envoyer un email de relance au locataire';
-          const info = derniereRelance
-            ? `<div style="font-size:10px;color:var(--text-muted);margin-top:3px;">Relancé le ${new Date(derniereRelance.date).toLocaleDateString('fr-FR', {day:'2-digit', month:'short'})}</div>`
-            : '';
-          relanceCell = `<button class="btn btn-sm" onclick="envoyerRelance('${b.id}',${m},${cy})" title="${btnTitle}" style="background:var(--accent-glow);color:var(--accent);border:1px solid rgba(108,92,231,0.25);font-size:11px;padding:5px 10px;display:inline-flex;align-items:center;gap:5px;">✉ ${btnLabel}</button>${info}`;
-        }
-        impayeRows.push(`<tr>
-          <td>${loc?'<a href="#" onclick="event.preventDefault();openLocataireFiche(\''+b.locId+'\')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">'+(loc.prenom?loc.prenom+' ':'')+loc.nom+'</a>':''}</td><td>${bien?bien.designation:''}</td>
-          <td>${proprio?proprio.nom:''}</td>
-          <td>${moisNoms[m]} ${cy}</td><td class="money" style="color:var(--danger);font-weight:600">${fmt(montant)}</td>
-          <td><span class="status status-unpaid">Impayé</span></td>
-          <td style="white-space:nowrap;">${relanceCell}</td>
-        </tr>`);
-      }
+  const moisCourt = ['','Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+  const groupes = (typeof collectImpayesParLocataire === 'function') ? collectImpayesParLocataire() : [];
+  let impayeRows = groupes.map(g => {
+    const loc = g.loc;
+    const locId = loc ? loc.id : (g.bail ? g.bail.locId : '');
+    const locNom = loc ? getLocataireName(loc) : (g.bail ? g.bail.locId : '');
+    const proprioNom = g.proprio ? g.proprio.nom : '';
+    // Biens uniques dans les \u00e9ch\u00e9ances
+    const biensMap = {};
+    g.echeances.forEach(e => {
+      if (e.bien) biensMap[e.bien.id] = e.bien.designation;
+      else if (e.bail) biensMap[e.bail.bienId] = e.bail.bienId;
+    });
+    const biensList = Object.values(biensMap);
+    const biensCell = biensList.length === 1
+      ? biensList[0]
+      : biensList.length + ' biens';
+    // \u00c9ch\u00e9ances : tri par date croissante, affichage "Mar 2026, Avr 2026\u2026"
+    const echeancesSorted = g.echeances.slice().sort((a,b)=> (a.annee*100+a.mois) - (b.annee*100+b.mois));
+    const echLabels = echeancesSorted.map(e => moisCourt[e.mois] + ' ' + e.annee);
+    const echCell = echLabels.length <= 3
+      ? echLabels.join(', ')
+      : echLabels.slice(0, 3).join(', ') + ' <span style="color:var(--text-muted);">+' + (echLabels.length-3) + '</span>';
+    // Retard max color
+    const retard = g.retardMax;
+    const retardBg = retard >= 60 ? 'rgba(239,68,68,0.12)' : retard >= 30 ? 'rgba(245,158,11,0.12)' : 'rgba(0,0,0,0.04)';
+    const retardColor = retard >= 60 ? 'var(--danger)' : retard >= 30 ? 'var(--warning)' : 'var(--text-light)';
+    // Relance
+    const hasEmail = loc && loc.email;
+    const nbEch = g.echeances.length;
+    let relanceCell;
+    if (!hasEmail) {
+      relanceCell = `<span style="font-size:11px;color:var(--text-muted);font-style:italic;" title="Aucune adresse email renseignée sur ce locataire">Email manquant</span>`;
+    } else {
+      const dern = g.derniereRelance;
+      const btnLabel = dern ? 'Relancer à nouveau' : (nbEch > 1 ? `Relancer (${nbEch})` : 'Relancer');
+      const btnTitle = dern
+        ? 'Dernière relance : ' + new Date(dern.date).toLocaleDateString('fr-FR', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})
+        : 'Envoyer un email de relance groupé au locataire';
+      const info = dern
+        ? `<div style="font-size:10px;color:var(--text-muted);margin-top:3px;">Relancé le ${new Date(dern.date).toLocaleDateString('fr-FR', {day:'2-digit', month:'short'})}</div>`
+        : '';
+      relanceCell = `<button class="btn btn-sm" onclick="envoyerRelanceGroupee('${locId}')" title="${btnTitle}" style="background:var(--accent-glow);color:var(--accent);border:1px solid rgba(108,92,231,0.25);font-size:11px;padding:5px 10px;display:inline-flex;align-items:center;gap:5px;">✉ ${btnLabel}</button>${info}`;
     }
+    const locLink = loc
+      ? `<a href="#" onclick="event.preventDefault();openLocataireFiche('${locId}')" style="color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;">${locNom}</a>`
+      : locNom;
+    return `<tr>
+      <td>${locLink}</td>
+      <td>${biensCell}</td>
+      <td>${proprioNom}</td>
+      <td style="font-size:12px;">${echCell}</td>
+      <td class="money" style="color:var(--danger);font-weight:700;">${fmt(g.totalMontant)}</td>
+      <td><span style="background:${retardBg};color:${retardColor};font-weight:700;font-size:12px;padding:3px 10px;border-radius:6px;white-space:nowrap;">${retard} j</span></td>
+      <td style="white-space:nowrap;">${relanceCell}</td>
+    </tr>`;
   });
-  tb.innerHTML = impayeRows.join('') || '<tr><td colspan="7" style="text-align:center;color:var(--success);padding:20px;">Aucun impay\u00e9</td></tr>';
+  tb.innerHTML = impayeRows.join('') || '<tr><td colspan="7" style="text-align:center;color:var(--success);padding:20px;">\uD83C\uDF89 Aucun impay\u00e9 \u2014 tous les loyers sont \u00e0 jour !</td></tr>';
 
   renderCharts(actifs, cy, cm);
   renderAlertes(actifs, cy, cm);
