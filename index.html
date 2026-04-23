@@ -1077,10 +1077,11 @@ input, select, textarea {
       <div class="form-row">
         <div class="form-group">
           <label>Type de document</label>
-          <select id="gen-type">
+          <select id="gen-type" onchange="onGenTypeChange()">
             <option value="quittance">Quittance de loyer</option>
             <option value="avis">Avis d'échéance</option>
             <option value="combine">Quittance + Avis (combiné)</option>
+            <option value="entree">Décompte d'entrée (dépôt + prorata 1er mois)</option>
           </select>
         </div>
         <div class="form-group">
@@ -1353,6 +1354,7 @@ function docTypeLabel(t) {
   if (t === 'quittance') return 'Quittance';
   if (t === 'avis') return "Avis d'échéance";
   if (t === 'combine') return 'Quittance + Avis';
+  if (t === 'entree') return "Décompte d'entrée";
   return t;
 }
 
@@ -1460,6 +1462,12 @@ function retelechargerDoc(histoId) {
   const bail = data.baux.find(b => b.id === entry.bailId);
   if (!bail) { alert('Le bail associé à ce document n\'existe plus.'); return; }
   const P = data.proprios.find(x => x.id === bail.proprioId) || { nom:'', adresse:'', cp:'', ville:'', siret:'' };
+
+  // D\u00e9compte d'entr\u00e9e : pas de mois/prorata \u00e0 recalculer, tout est d\u00e9riv\u00e9 de bail.debut
+  if (entry.docType === 'entree') {
+    genEntreePDF(bail, P);
+    return;
+  }
 
   const mois = entry.mois;
   const annee = entry.annee;
@@ -2490,7 +2498,7 @@ function openBienFiche(bienId, pushStateFlag) {
   if (bauxActifs.length) {
     html += '<div class="card"><div class="card-header"><h3>📄 Générer documents</h3></div><div class="card-body">';
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:14px;">';
-    html += '<div class="form-group"><label>Type</label><select id="fiche-gen-type" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;"><option value="quittance">Quittance</option><option value="avis">Avis d\'échéance</option><option value="combine">Quittance + Avis</option></select></div>';
+    html += '<div class="form-group"><label>Type</label><select id="fiche-gen-type" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;"><option value="quittance">Quittance</option><option value="avis">Avis d\'échéance</option><option value="combine">Quittance + Avis</option><option value="entree">Décompte d\'entrée</option></select></div>';
     html += '<div class="form-group"><label>Mois</label><select id="fiche-gen-mois" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;">';
     const moisNomsFiche = ['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
     for (let m = 1; m <= 12; m++) {
@@ -2896,6 +2904,7 @@ function openLocataireFiche(locId, pushStateFlag) {
             <option value="combine">Quittance + Avis d'\u00e9ch\u00e9ance</option>
             <option value="quittance">Quittance seule</option>
             <option value="avis">Avis d'\u00e9ch\u00e9ance seul</option>
+            <option value="entree">D\u00e9compte d'entr\u00e9e (d\u00e9p\u00f4t + prorata)</option>
           </select>
         </div>
         <div class="form-group">
@@ -2972,6 +2981,14 @@ function ficheGenererDoc(locId, returnBlob) {
   const results = [];
   baux.forEach(bail => {
     const P = data.proprios.find(x => x.id === bail.proprioId) || {};
+
+    // D\u00e9compte d'entr\u00e9e : utilise bail.debut, ignore mois/ann\u00e9e
+    if (type === 'entree') {
+      const r = genEntreePDF(bail, P, returnBlob);
+      if (r) results.push({ ...r, bail });
+      return;
+    }
+
     const mp = getMontantsPeriode(bail, moisNum);
     if (mp.skip) return;
     const { loyerAppele, chargesAppelees, periodeLabel, isLoyerTrim, trimMois } = mp;
@@ -3003,16 +3020,18 @@ function ficheGenererPDF(locId) {
   const type = gv('fiche-doc-type');
   const mois = gv('fiche-doc-mois');
   const annee = gv('fiche-doc-annee');
-  const typeLabels = {quittance:'Quittance',avis:"Avis d'\u00e9ch\u00e9ance",combine:'Quittance + Avis'};
+  const typeLabels = {quittance:'Quittance',avis:"Avis d'\u00e9ch\u00e9ance",combine:'Quittance + Avis',entree:"D\u00e9compte d'entr\u00e9e"};
   // Log activity for each active bail of this locataire
   const _bauxLoc = data.baux.filter(b => b.locId === locId && b.statut === 'Actif');
   _bauxLoc.forEach(bail => {
     const _bien = data.biens.find(x=>x.id===bail.bienId);
     const _loc = data.locataires.find(x=>x.id===locId);
-    logActivity({ type: 'document', proprioId: bail.proprioId, locataireId: locId, bailId: bail.id, bienId: bail.bienId, details: (typeLabels[type]||type) + ' ' + mois + ' ' + annee + ' généré(e)' + (_bien?' ('+_bien.designation+')':'') + (_loc?' - '+((_loc.prenom||'')+' '+_loc.nom).trim():'') });
+    const periodeLog = type==='entree' ? '' : (' ' + mois + ' ' + annee);
+    logActivity({ type: 'document', proprioId: bail.proprioId, locataireId: locId, bailId: bail.id, bienId: bail.bienId, details: (typeLabels[type]||type) + periodeLog + ' généré(e)' + (_bien?' ('+_bien.designation+')':'') + (_loc?' - '+((_loc.prenom||'')+' '+_loc.nom).trim():'') });
   });
   saveData();
-  document.getElementById('fiche-doc-result').innerHTML = '<div class="alert alert-success">' + (typeLabels[type]||type) + ' g\u00e9n\u00e9r\u00e9(e) pour ' + mois + ' ' + annee + ' !</div>';
+  const periodeMsg = type==='entree' ? "(date d'entr\u00e9e du bail)" : ('pour ' + mois + ' ' + annee);
+  document.getElementById('fiche-doc-result').innerHTML = '<div class="alert alert-success">' + (typeLabels[type]||type) + ' g\u00e9n\u00e9r\u00e9(e) ' + periodeMsg + ' !</div>';
 }
 
 async function ficheArchiverDrive(locId) {
@@ -3046,7 +3065,10 @@ async function ficheArchiverDrive(locId) {
       await gdriveUploadPDF(doc.blob, doc.filename, folderId);
       count++;
       const _archLoc = data.locataires.find(x=>x.id===locId);
-      logActivity({ type: 'document', proprioId: doc.bail.proprioId, locataireId: locId, bailId: doc.bail.id, bienId: doc.bail.bienId, details: (gv('fiche-doc-type')==='quittance'?'Quittance':gv('fiche-doc-type')==='avis'?'Avis d\'échéance':'Quittance + Avis') + ' ' + gv('fiche-doc-mois') + ' ' + annee + ' archivé(e) sur Drive' + (bien?' ('+bien.designation+')':'') + (_archLoc?' - '+((_archLoc.prenom||'')+' '+_archLoc.nom).trim():'') });
+      const _archType = gv('fiche-doc-type');
+      const _archTypeLabels = {quittance:'Quittance',avis:"Avis d'\u00e9ch\u00e9ance",combine:'Quittance + Avis',entree:"D\u00e9compte d'entr\u00e9e"};
+      const _archPeriode = _archType==='entree' ? '' : (' ' + gv('fiche-doc-mois') + ' ' + annee);
+      logActivity({ type: 'document', proprioId: doc.bail.proprioId, locataireId: locId, bailId: doc.bail.id, bienId: doc.bail.bienId, details: (_archTypeLabels[_archType]||_archType) + _archPeriode + ' archivé(e) sur Drive' + (bien?' ('+bien.designation+')':'') + (_archLoc?' - '+((_archLoc.prenom||'')+' '+_archLoc.nom).trim():'') });
     } catch(e) { console.error(e); errors++; }
   }
   if (count > 0) saveData();
@@ -3065,12 +3087,16 @@ function ficheEnvoyerEmail(locId) {
     document.getElementById('fiche-doc-result').innerHTML = '<div class="alert" style="background:#fff3cd;border:1px solid #ffc107;padding:12px;border-radius:6px;">Session Google expir\u00e9e. Cliquez sur le bouton Sync Drive en haut \u00e0 droite pour vous reconnecter.</div>';
     return;
   }
+  const type = gv('fiche-doc-type');
+  if (type === 'entree') {
+    document.getElementById('fiche-doc-result').innerHTML = '<div class="alert alert-info">L\'envoi par email n\'est pas disponible pour le d\u00e9compte d\'entr\u00e9e. Utilisez <strong>T\u00e9l\u00e9charger</strong> ou <strong>Archiver sur Drive</strong>.</div>';
+    return;
+  }
   const loc = data.locataires.find(x => x.id === locId);
   if (!loc || !loc.email) {
     document.getElementById('fiche-doc-result').innerHTML = '<div class="alert alert-info">Ce locataire n\'a pas d\'adresse email.</div>';
     return;
   }
-  const type = gv('fiche-doc-type');
   const mois = gv('fiche-doc-mois');
   const annee = gv('fiche-doc-annee');
   const periode = mois + ' ' + annee;
@@ -5050,6 +5076,10 @@ function ficheBienEnvoyerEmail(bienId) {
     return;
   }
   const type = gv('fiche-gen-type');
+  if (type === 'entree') {
+    document.getElementById('fiche-gen-result').innerHTML = '<div class="alert alert-info">L\'envoi par email n\'est pas disponible pour le d\u00e9compte d\'entr\u00e9e. Utilisez <strong>T\u00e9l\u00e9charger</strong> ou <strong>Archiver sur Drive</strong>.</div>';
+    return;
+  }
   const mois = gv('fiche-gen-mois');
   const annee = gv('fiche-gen-annee');
   const bailSel = gv('fiche-gen-bail');
@@ -5116,6 +5146,26 @@ async function genererDocumentsFicheDrive(bienId) {
   document.getElementById('fiche-gen-result').innerHTML = '<div style="color:var(--success);font-size:13px;font-weight:600;">✓ Document archivé sur Drive</div>';
 }
 
+// Adapte dynamiquement l'UI de la page "G\u00e9n\u00e9rer des documents" selon le type choisi.
+// Pour le d\u00e9compte d'entr\u00e9e, mois/ann\u00e9e sont ignor\u00e9s (on utilise bail.debut).
+function onGenTypeChange() {
+  const type = gv('gen-type');
+  const moisGroup = document.getElementById('gen-mois')?.closest('.form-group');
+  const anneeGroup = document.getElementById('gen-annee')?.closest('.form-group');
+  const resEl = document.getElementById('gen-result');
+  const isEntree = type === 'entree';
+  [moisGroup, anneeGroup].forEach(el => {
+    if (!el) return;
+    el.style.opacity = isEntree ? '0.4' : '';
+    el.style.pointerEvents = isEntree ? 'none' : '';
+  });
+  if (isEntree && resEl) {
+    resEl.innerHTML = '<div class="alert alert-info"><strong>D\u00e9compte d\'entr\u00e9e</strong> : s\u00e9lectionnez un <strong>bail pr\u00e9cis</strong> ci-dessous. Mois/ann\u00e9e ignor\u00e9s (d\u00e9riv\u00e9s de la date de d\u00e9but du bail).</div>';
+  } else if (resEl && resEl.innerHTML.indexOf('D\u00e9compte d\'entr\u00e9e</strong> : s\u00e9lectionnez') !== -1) {
+    resEl.innerHTML = '';
+  }
+}
+
 function genererDocuments() {
   const type = gv('gen-type');
   const mois = gv('gen-mois');
@@ -5123,6 +5173,12 @@ function genererDocuments() {
   const periode = mois+' '+annee;
   const bailSel = gv('gen-bail');
   const proprioSel = gv('gen-proprio');
+
+  // Garde-fou : un d\u00e9compte d'entr\u00e9e n'a de sens que pour un bail pr\u00e9cis
+  if (type === 'entree' && bailSel === 'all') {
+    document.getElementById('gen-result').innerHTML = '<div class="alert alert-info">Pour un <strong>d\u00e9compte d\'entr\u00e9e</strong>, veuillez s\u00e9lectionner un bail pr\u00e9cis (pas "Tous les baux").</div>';
+    return;
+  }
 
   let baux = data.baux.filter(b=>b.statut==='Actif');
   if (proprioSel!=='all') baux = baux.filter(b=>b.proprioId===proprioSel);
@@ -5139,6 +5195,20 @@ function genererDocuments() {
 
   baux.forEach(bail => {
     const P = data.proprios.find(x=>x.id===bail.proprioId) || {nom:'',adresse:'',cp:'',ville:'',siret:''};
+
+    // D\u00e9compte d'entr\u00e9e : ignore mois/ann\u00e9e s\u00e9lectionn\u00e9s, utilise bail.debut directement
+    if (type==='entree') {
+      const res = genEntreePDF(bail, P);
+      if (res) {
+        count++;
+        const _locDoc = data.locataires.find(x=>x.id===bail.locId);
+        const _bienDoc = data.biens.find(x=>x.id===bail.bienId);
+        logActivity({ type: 'document', proprioId: bail.proprioId, locataireId: bail.locId, bailId: bail.id, bienId: bail.bienId, details: "D\u00e9compte d'entr\u00e9e g\u00e9n\u00e9r\u00e9" + (_bienDoc?' ('+_bienDoc.designation+')':'') + (_locDoc?' - '+((_locDoc.prenom||'')+' '+_locDoc.nom).trim():'') });
+        logDocumentGenere({ docType: 'entree', bailId: bail.id, mois: '', annee: '', archive: 'local', filename: res.filename || ('Decompte_Entree_'+bail.id+'.pdf') });
+      }
+      return;
+    }
+
     const mp = getMontantsPeriode(bail, moisNum);
     const { loyerAppele, chargesAppelees, periodeLabel, isLoyerTrim, trimMois } = mp;
 
@@ -5182,8 +5252,9 @@ function genererDocuments() {
     logDocumentGenere({ docType: type, bailId: bail.id, mois: mois, annee: annee, archive: 'local', filename: _filename });
   });
 
-  const typeLabels = {quittance:'quittance(s)',avis:"avis d'\u00e9ch\u00e9ance",combine:'document(s) combin\u00e9(s) (quittance + avis)'};
-  let resultMsg = `<div class="alert alert-success">${count} ${typeLabels[type]||type} g\u00e9n\u00e9r\u00e9(s) pour ${periode} !</div>`;
+  const typeLabels = {quittance:'quittance(s)',avis:"avis d'\u00e9ch\u00e9ance",combine:'document(s) combin\u00e9(s) (quittance + avis)',entree:"d\u00e9compte(s) d'entr\u00e9e"};
+  const periodeTxt = type==='entree' ? "(date d'entr\u00e9e du bail)" : `pour ${periode}`;
+  let resultMsg = `<div class="alert alert-success">${count} ${typeLabels[type]||type} g\u00e9n\u00e9r\u00e9(s) ${periodeTxt} !</div>`;
   if (skipped > 0) resultMsg += `<div class="alert alert-info">${skipped} bail(s) trimestriel(s) ignor\u00e9(s) : ${mois} n'est pas un mois d'\u00e9ch\u00e9ance pour ces baux.</div>`;
   document.getElementById('gen-result').innerHTML = resultMsg;
   if (count > 0) renderHistoriqueDocs();
@@ -5638,6 +5709,203 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   const _cFilename = sanitizeFilename(`Quittance_Avis_${bail.id}_${mois}_${annee}`) + '.pdf';
   if (returnBlob) return { blob: doc.output('blob'), filename: _cFilename };
   doc.save(_cFilename);
+}
+
+// ── DÉCOMPTE D'ENTRÉE (dépôt + prorata 1er mois) ──
+// Utilise bail.debut comme date d'entrée. Prorata en jours calendaires réels :
+// prorata = (jours restants du mois d'entrée, date incluse) / (nb total de jours du mois).
+// Si l'entrée tombe un 1er du mois : mois complet, pas de prorata.
+// Charges mensuelles équivalentes : bail.charges (mensuelle) ou chargesTrimestrielles/3 (trim.).
+function genEntreePDF(bail, P, returnBlob) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF('p','mm','a4');
+  const w=210, h=297;
+  const loc = data.locataires.find(x=>x.id===bail.locId)||{};
+  const bien = data.biens.find(x=>x.id===bail.bienId)||{};
+  const locNom = `${loc.civilite||''} ${loc.prenom||''} ${loc.nom||''}`.trim();
+
+  if (!bail.debut) {
+    alert("Impossible de g\u00e9n\u00e9rer le d\u00e9compte d'entr\u00e9e : date de d\u00e9but du bail " + bail.id + " manquante.");
+    return null;
+  }
+  const dEntree = new Date(bail.debut);
+  if (isNaN(dEntree.getTime())) {
+    alert("Date de d\u00e9but du bail " + bail.id + " invalide.");
+    return null;
+  }
+  const jourEntree = dEntree.getDate();
+  const moisEntree = dEntree.getMonth() + 1; // 1..12
+  const anneeEntree = dEntree.getFullYear();
+  const joursDansMois = new Date(anneeEntree, moisEntree, 0).getDate();
+  const joursProrata = joursDansMois - jourEntree + 1; // inclus jour d'entr\u00e9e et dernier jour du mois
+  const moisNoms = ['','Janvier','F\u00e9vrier','Mars','Avril','Mai','Juin','Juillet','Ao\u00fbt','Septembre','Octobre','Novembre','D\u00e9cembre'];
+  const moisEntreeNom = moisNoms[moisEntree];
+  const moisSuivantNum = moisEntree === 12 ? 1 : moisEntree + 1;
+  const anneeSuivante = moisEntree === 12 ? anneeEntree + 1 : anneeEntree;
+  const moisSuivantNom = moisNoms[moisSuivantNum];
+  const entreeComplete = jourEntree === 1;
+
+  // Charges mensuelles \u00e9quivalentes pour le prorata
+  const periCharges = bail.periodiciteCharges || 'mensuelle';
+  let chargesMens = 0;
+  let chargesBaseLabel = 'Provision pour charges';
+  if (periCharges === 'trimestrielle') {
+    chargesMens = (bail.chargesTrimestrielles || 0) / 3;
+    chargesBaseLabel = 'Provision charges (\u00e9q. mensuel, bail trimestriel)';
+  } else {
+    chargesMens = bail.charges || 0;
+  }
+  const loyerMens = bail.loyer || 0;
+  const ratio = joursProrata / joursDansMois;
+  const prorataLoyer = Math.round(loyerMens * ratio * 100) / 100;
+  const prorataCharges = Math.round(chargesMens * ratio * 100) / 100;
+  const depot = bail.depot || 0;
+  const totalEntree = depot + prorataLoyer + prorataCharges;
+  const moisPlein = loyerMens + chargesMens;
+
+  // ── Header ──
+  doc.setFillColor(22,160,133); doc.rect(0,0,w,28,'F');
+  doc.setTextColor(255); doc.setFontSize(20); doc.setFont('helvetica','bold');
+  doc.text("D\u00c9COMPTE D'ENTR\u00c9E",w/2,14,{align:'center'});
+  doc.setFontSize(10); doc.setFont('helvetica','normal');
+  doc.text("Entr\u00e9e dans les lieux : "+String(jourEntree).padStart(2,'0')+'/'+String(moisEntree).padStart(2,'0')+'/'+anneeEntree,w/2,23,{align:'center'});
+
+  let y=36;
+
+  // Bailleur
+  doc.setFillColor(52,152,219); doc.rect(15,y,85,7,'F');
+  doc.setTextColor(255); doc.setFontSize(9); doc.setFont('helvetica','bold');
+  doc.text('BAILLEUR',18,y+5);
+  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.text(P.nom||'[ \u00c0 compl\u00e9ter ]',18,y+14);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  let by=y+19;
+  if(P.adresse){doc.text(P.adresse,18,by);by+=4;}
+  if(P.cp||P.ville){doc.text(`${P.cp||''} ${P.ville||''}`,18,by);by+=4;}
+  if(P.siret){doc.text('SIRET : '+P.siret,18,by);}
+
+  // Locataire
+  doc.setFillColor(52,152,219); doc.rect(110,y,85,7,'F');
+  doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.text('LOCATAIRE',113,y+5);
+  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.text(locNom,113,y+14);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  let ly=y+19;
+  if(loc.adresse){doc.text(loc.adresse,113,ly);ly+=4;}
+  if(loc.cp||loc.ville){doc.text(`${loc.cp||''} ${loc.ville||''}`,113,ly);}
+
+  y=76; doc.setDrawColor(189,195,199); doc.line(15,y,195,y); y+=5;
+
+  // Bien
+  doc.setFillColor(248,249,250); doc.rect(15,y,180,20,'F');
+  doc.setDrawColor(189,195,199); doc.rect(15,y,180,20,'S');
+  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.text('Bien lou\u00e9 :',20,y+6);
+  doc.setFont('helvetica','normal');
+  doc.text(`${bien.designation||''} (${bien.type||''})`,48,y+6);
+  doc.text(`Adresse : ${bien.adresse||''} - ${bien.cp||''} ${bien.ville||''}`,20,y+12);
+  doc.text(`Bail n\u00b0 : ${bail.id}`,20,y+17);
+  y+=24;
+
+  // Encart p\u00e9riode de prorata
+  doc.setFillColor(232,246,241); doc.rect(15,y,180,14,'F');
+  doc.setDrawColor(22,160,133); doc.rect(15,y,180,14,'S');
+  doc.setTextColor(22,160,133); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+  const entreeStr = String(jourEntree).padStart(2,'0')+'/'+String(moisEntree).padStart(2,'0')+'/'+anneeEntree;
+  const finMoisStr = String(joursDansMois).padStart(2,'0')+'/'+String(moisEntree).padStart(2,'0')+'/'+anneeEntree;
+  const prorataInfo = entreeComplete
+    ? `Mois d'entr\u00e9e complet \u2014 du ${entreeStr} au ${finMoisStr} (${joursProrata} jours)`
+    : `Prorata du ${entreeStr} au ${finMoisStr} \u2014 ${joursProrata} jour${joursProrata>1?'s':''} sur ${joursDansMois}`;
+  doc.text(prorataInfo, w/2, y+8.5, {align:'center'});
+  y+=18;
+
+  // Titre tableau
+  doc.setFillColor(22,160,133); doc.rect(15,y,180,8,'F');
+  doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+  doc.text("MONTANTS \u00c0 R\u00c9GLER \u00c0 L'ENTR\u00c9E", w/2, y+6, {align:'center'});
+  y+=14;
+
+  // Tableau
+  doc.setFillColor(44,62,80); doc.rect(25,y,160,8,'F');
+  doc.setTextColor(255); doc.setFontSize(9); doc.setFont('helvetica','bold');
+  doc.text('D\u00e9signation',30,y+6); doc.text('Montant',170,y+6,{align:'right'});
+  y+=10;
+
+  doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  // D\u00e9p\u00f4t
+  doc.text('D\u00e9p\u00f4t de garantie'+(depot===0?' (aucun)':''),30,y+5);
+  doc.text(fmt(depot),170,y+5,{align:'right'});
+  doc.setDrawColor(220,220,220); doc.line(25,y+8,185,y+8); y+=10;
+  // Prorata loyer
+  const labelLoyer = entreeComplete
+    ? `Loyer HC \u2014 ${moisEntreeNom} ${anneeEntree} (mois complet)`
+    : `Prorata loyer HC \u2014 ${moisEntreeNom} ${anneeEntree} (${joursProrata}/${joursDansMois} j)`;
+  doc.text(labelLoyer,30,y+5);
+  doc.text(fmt(prorataLoyer),170,y+5,{align:'right'});
+  doc.line(25,y+8,185,y+8); y+=10;
+  // Prorata charges
+  const chargesLabel = entreeComplete
+    ? `${chargesBaseLabel} \u2014 ${moisEntreeNom} ${anneeEntree} (mois complet)`
+    : `Prorata ${chargesBaseLabel.toLowerCase()} \u2014 ${moisEntreeNom} ${anneeEntree} (${joursProrata}/${joursDansMois} j)`;
+  doc.text(chargesLabel + (chargesMens===0?' (non applicable)':''),30,y+5);
+  doc.text(fmt(prorataCharges),170,y+5,{align:'right'});
+  doc.line(25,y+8,185,y+8); y+=14;
+
+  // Total
+  doc.setFillColor(232,246,241); doc.rect(25,y,160,10,'F');
+  doc.setDrawColor(22,160,133); doc.line(25,y,185,y);
+  doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  doc.text("TOTAL \u00c0 VERSER \u00c0 L'ENTR\u00c9E",30,y+7);
+  doc.text(fmt(totalEntree),170,y+7,{align:'right'});
+  doc.line(25,y+10,185,y+10);
+  y+=18;
+
+  doc.setFont('helvetica','italic'); doc.setFontSize(8); doc.setTextColor(100);
+  const sommeL = doc.splitTextToSize('Soit la somme de : '+numberToFrench(totalEntree), 155);
+  doc.text(sommeL,25,y); y+=sommeL.length*3.5;
+
+  y+=6;
+
+  // Info prochaine \u00e9ch\u00e9ance
+  doc.setDrawColor(189,195,199); doc.line(20,y,190,y); y+=6;
+  doc.setFillColor(240,244,248); doc.rect(15,y,180,20,'F');
+  doc.setDrawColor(189,195,199); doc.rect(15,y,180,20,'S');
+  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.text('Pour information \u2014 prochaine \u00e9ch\u00e9ance',20,y+6);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  const jourEch = bail.jourEcheance || 1;
+  const prochEchStr = String(jourEch).padStart(2,'0')+'/'+String(moisSuivantNum).padStart(2,'0')+'/'+anneeSuivante;
+  doc.text(`Prochain loyer plein : ${moisSuivantNom} ${anneeSuivante} \u2014 ${fmt(loyerMens)} (loyer HC) + ${fmt(chargesMens)} (charges) = ${fmt(moisPlein)}`,20,y+12);
+  doc.text(`Date d'\u00e9ch\u00e9ance : ${prochEchStr}`,20,y+17);
+  y+=26;
+
+  // L\u00e9gal
+  doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(100);
+  const legal = `Le bailleur, ${P.nom||'___'}, \u00e9tablit le pr\u00e9sent d\u00e9compte d'entr\u00e9e \u00e0 destination de ${locNom} pour la location du bien d\u00e9sign\u00e9 ci-dessus \u00e0 compter du ${entreeStr}. Le d\u00e9p\u00f4t de garantie de ${fmt(depot)} est restituable au locataire dans les conditions pr\u00e9vues par la loi, sous d\u00e9duction \u00e9ventuelle des sommes restant dues au bailleur \u00e0 la sortie.`;
+  const lines = doc.splitTextToSize(legal,170);
+  doc.text(lines,20,y); y+=lines.length*3.5+2;
+
+  y+=6;
+  doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.text(`Fait \u00e0 ${P.ville||'___________'}, le ${todayFr()}`,25,y);
+  y+=10;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.text('Signature du bailleur :', 25, y);
+  doc.text('Signature du locataire :', 115, y);
+  doc.setDrawColor(189,195,199);
+  doc.line(25, y+18, 95, y+18);
+  doc.line(115, y+18, 190, y+18);
+
+  // Footer
+  doc.setFillColor(22,160,133); doc.rect(0,h-10,w,10,'F');
+  doc.setTextColor(255); doc.setFontSize(6); doc.setFont('helvetica','normal');
+  doc.text('Document g\u00e9n\u00e9r\u00e9 automatiquement - Gestion Locative',w/2,h-4,{align:'center'});
+
+  const _eFilename = sanitizeFilename(`Decompte_Entree_${bail.id}_${moisEntreeNom}_${anneeEntree}`) + '.pdf';
+  if (returnBlob) return { blob: doc.output('blob'), filename: _eFilename };
+  doc.save(_eFilename);
+  return { filename: _eFilename };
 }
 
 // ── UTILS ──
@@ -6708,6 +6976,12 @@ async function genererDocumentsDrive() {
   const bailSel = gv('gen-bail');
   const proprioSel = gv('gen-proprio');
 
+  // Garde-fou : d\u00e9compte d'entr\u00e9e n\u00e9cessite un bail pr\u00e9cis
+  if (type === 'entree' && bailSel === 'all') {
+    document.getElementById('gen-result').innerHTML = '<div class="alert alert-info">Pour un <strong>d\u00e9compte d\'entr\u00e9e</strong>, veuillez s\u00e9lectionner un bail pr\u00e9cis (pas "Tous les baux").</div>';
+    return;
+  }
+
   let baux = data.baux.filter(b => b.statut === 'Actif');
   if (proprioSel !== 'all') baux = baux.filter(b => b.proprioId === proprioSel);
   if (bailSel !== 'all') baux = baux.filter(b => b.id === bailSel);
@@ -6730,6 +7004,31 @@ async function genererDocumentsDrive() {
     const P = data.proprios.find(x => x.id === bail.proprioId) || { nom: '', adresse: '', cp: '', ville: '', siret: '' };
     const loc = data.locataires.find(x => x.id === bail.locId) || {};
     const bien = data.biens.find(x => x.id === bail.bienId) || {};
+
+    // D\u00e9compte d'entr\u00e9e : pas de prorata/trimestre \u00e0 g\u00e9rer, ann\u00e9e de l'entr\u00e9e pour l'arbo
+    if (type === 'entree') {
+      try {
+        const pdfResult = genEntreePDF(bail, P, true);
+        if (!pdfResult) continue;
+        const dEntree = bail.debut ? new Date(bail.debut) : new Date();
+        const anneeEntree = isNaN(dEntree.getTime()) ? annee : dEntree.getFullYear();
+        const proprioNom = (P.nom || 'Sans propri\u00e9taire').replace(/[/\\:*?"<>|]/g, '_');
+        const locNom2 = `${loc.prenom || ''} ${loc.nom || ''}`.trim() || 'Sans locataire';
+        const bienLabel = `${bien.designation || bail.bienId} - ${locNom2}`.replace(/[/\\:*?"<>|]/g, '_');
+        const folderPath = ['Gestion Locative', proprioNom, bienLabel, anneeEntree.toString()];
+        progressEl.textContent = `Archivage : ${proprioNom} / ${bienLabel} / ${anneeEntree}...`;
+        const folderId = await gdriveEnsureFolderPath(folderPath);
+        await gdriveUploadPDF(pdfResult.blob, pdfResult.filename, folderId);
+        count++;
+        logActivity({ type: 'document', proprioId: bail.proprioId, locataireId: bail.locId, bailId: bail.id, bienId: bail.bienId, details: "D\u00e9compte d'entr\u00e9e archiv\u00e9 sur Drive" + (bien?' ('+bien.designation+')':'') + (loc?' - '+((loc.prenom||'')+' '+loc.nom).trim():'') });
+        logDocumentGenere({ docType: 'entree', bailId: bail.id, mois: '', annee: anneeEntree.toString(), archive: 'drive', filename: pdfResult.filename });
+      } catch (e) {
+        console.error('Erreur archivage Drive (entr\u00e9e):', e);
+        errors++;
+      }
+      continue;
+    }
+
     const mp = getMontantsPeriode(bail, moisNum);
     const { loyerAppele, chargesAppelees, periodeLabel, isLoyerTrim, trimMois } = mp;
 
@@ -6784,8 +7083,9 @@ async function genererDocumentsDrive() {
     }
   }
 
-  const typeLabels = { quittance: 'quittance(s)', avis: "avis d'\u00e9ch\u00e9ance", combine: 'document(s) combin\u00e9(s)' };
-  let msg = `<div class="alert alert-success">${count} ${typeLabels[type] || type} archiv\u00e9(s) sur Google Drive pour ${periode} !</div>`;
+  const typeLabels = { quittance: 'quittance(s)', avis: "avis d'\u00e9ch\u00e9ance", combine: 'document(s) combin\u00e9(s)', entree: "d\u00e9compte(s) d'entr\u00e9e" };
+  const periodeTxtDrive = type === 'entree' ? "(date d'entr\u00e9e du bail)" : `pour ${periode}`;
+  let msg = `<div class="alert alert-success">${count} ${typeLabels[type] || type} archiv\u00e9(s) sur Google Drive ${periodeTxtDrive} !</div>`;
   if (skipped > 0) msg += `<div class="alert alert-info">${skipped} bail(s) trimestriel(s) ignor\u00e9(s).</div>`;
   if (errors > 0) msg += `<div class="alert" style="background:#f8d7da;border:1px solid #f5c6cb;padding:12px;border-radius:6px;">${errors} erreur(s) lors de l'archivage.</div>`;
   resultEl.innerHTML = msg;
@@ -6924,6 +7224,11 @@ function ouvrirEnvoiEmail() {
   }
 
   const type = gv('gen-type');
+  // Le d\u00e9compte d'entr\u00e9e est remis en main propre \u00e0 la signature, pas d'envoi email automatique
+  if (type === 'entree') {
+    document.getElementById('gen-result').innerHTML = '<div class="alert alert-info">L\'envoi par email n\'est pas disponible pour le d\u00e9compte d\'entr\u00e9e. Utilisez <strong>T\u00e9l\u00e9charger</strong> ou <strong>Archiver sur Drive</strong>.</div>';
+    return;
+  }
   const mois = gv('gen-mois');
   const annee = gv('gen-annee');
   const periode = mois + ' ' + annee;
@@ -7610,7 +7915,9 @@ function genererPDFBlob(eq) {
   const moisNoms = ['','Janvier','F\u00e9vrier','Mars','Avril','Mai','Juin','Juillet','Ao\u00fbt','Septembre','Octobre','Novembre','D\u00e9cembre'];
   const periode = mois + ' ' + annee;
 
-  if (eq.type === 'quittance') {
+  if (eq.type === 'entree') {
+    return genEntreePDF(bail, P, true);
+  } else if (eq.type === 'quittance') {
     return genQuittancePDF(bail, P, periode, mois, annee, eq.chargesAppelees, eq.loyerAppele, eq.periodeLabel, true);
   } else if (eq.type === 'avis') {
     return genAvisPDF(bail, P, periode, mois, annee, eq.chargesAppelees, eq.loyerAppele, eq.periodeLabel, true);
