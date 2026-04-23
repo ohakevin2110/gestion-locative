@@ -6,6 +6,13 @@
 <title>Gestion Locative - Quittances & Avis d'Échéance</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  // Configuration du worker pdf.js (obligatoire pour parser un PDF)
+  if (window.pdfjsLib) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+</script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://apis.google.com/js/api.js" async defer></script>
 <!-- Firebase SDK (compat) pour l'auth par email -->
@@ -4326,7 +4333,19 @@ function openModal(type, editId) {
       <div class="form-row"><div class="form-group"><label>SIRET</label><input id="m-pr-siret" value="${esc(ep.siret)}" placeholder="Obligatoire pour les sociétés"></div>
       <div class="form-group"><label>N° TVA</label><input id="m-pr-tva" value="${esc(ep.tva)}"></div></div>
       <div class="form-row"><div class="form-group"><label>Téléphone</label><input id="m-pr-tel" value="${esc(ep.tel)}"></div>
-      <div class="form-group"><label>Email</label><input id="m-pr-email" type="email" value="${esc(ep.email)}"></div></div>`;
+      <div class="form-group"><label>Email</label><input id="m-pr-email" type="email" value="${esc(ep.email)}"></div></div>
+      <div style="margin-top:8px;padding-top:10px;border-top:1px solid var(--border);">
+        <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Coordonnées bancaires (affichées sur les documents)</div>
+        <div id="rib-drop-zone" ondragover="event.preventDefault();this.style.borderColor='var(--accent)';this.style.background='var(--accent-glow)';" ondragleave="this.style.borderColor='var(--border)';this.style.background='transparent';" ondrop="handleRibDrop(event)" style="border:2px dashed var(--border);border-radius:8px;padding:14px;text-align:center;margin-bottom:12px;cursor:pointer;transition:all 0.15s;" onclick="document.getElementById('rib-file-input').click()">
+          <div style="font-size:13px;color:var(--text-muted);">📎 <strong>Glissez votre RIB PDF ici</strong> (ou cliquez pour sélectionner) — les champs seront pré-remplis automatiquement</div>
+          <div id="rib-drop-status" style="font-size:11px;margin-top:6px;color:var(--text-muted);"></div>
+          <input type="file" id="rib-file-input" accept="application/pdf,image/*" style="display:none;" onchange="handleRibFileInput(event)">
+        </div>
+        <div class="form-row"><div class="form-group"><label>Titulaire du compte</label><input id="m-pr-titulaire" value="${esc(ep.titulaire)}" placeholder="Laisser vide pour reprendre la raison sociale"></div>
+        <div class="form-group"><label>Banque</label><input id="m-pr-banque" value="${esc(ep.banque)}" placeholder="Ex: Caisse d'Épargne"></div></div>
+        <div class="form-row"><div class="form-group" style="flex:2;"><label>IBAN</label><input id="m-pr-iban" value="${esc(ep.iban)}" placeholder="FR76 3000 4001 2300 0123 4567 890"></div>
+        <div class="form-group"><label>BIC / SWIFT</label><input id="m-pr-bic" value="${esc(ep.bic)}" placeholder="Ex: BNPAFRPPXXX"></div></div>
+      </div>`;
     if (existingProprio) {
       footer.innerHTML = `<button class="btn btn-outline" onclick="closeModal()">Annuler</button><button class="btn btn-success" onclick="updateProprio('${editId}')">Enregistrer</button>`;
     } else {
@@ -4473,15 +4492,31 @@ function validateSiret(siret) {
   return /^\d{14}$/.test(cleaned);
 }
 
+// Normalise un IBAN : retire espaces/tirets, met en majuscules. Retourne '' si vide.
+function normalizeIban(s) {
+  return String(s || '').replace(/[\s-]/g, '').toUpperCase();
+}
+// Valide un IBAN par structure (lettres pays + 2 chiffres clef + alphanum, 15-34 car.).
+// Validation l\u00e9g\u00e8re \u2014 on accepte l'IBAN m\u00eame si la clef modulo 97 n'est pas v\u00e9rifi\u00e9e (pour rester permissif).
+function validateIbanLight(s) {
+  if (!s) return true; // vide = valide (facultatif)
+  const v = normalizeIban(s);
+  return /^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(v);
+}
+
 function saveProprio() {
   const nom = gv('m-pr-nom');
   if (!nom) { alert('Le nom est obligatoire'); return; }
   const siret = gv('m-pr-siret');
   if (!validateSiret(siret)) { alert('SIRET invalide : il doit contenir exactement 14 chiffres (ou \u00eatre laiss\u00e9 vide).'); return; }
+  const iban = gv('m-pr-iban');
+  if (!validateIbanLight(iban)) { alert('IBAN invalide : format attendu 2 lettres + 2 chiffres + 11 \u00e0 30 caract\u00e8res alphanum\u00e9riques (ou laisser vide).'); return; }
   data.proprios.push({
     id: nextId('PR', data.proprios), type: gv('m-pr-type'), nom: nom,
     adresse: gv('m-pr-adresse'), cp: gv('m-pr-cp'), ville: gv('m-pr-ville'),
-    siret: siret.replace(/\s/g, ''), tva: gv('m-pr-tva'), tel: gv('m-pr-tel'), email: gv('m-pr-email')
+    siret: siret.replace(/\s/g, ''), tva: gv('m-pr-tva'), tel: gv('m-pr-tel'), email: gv('m-pr-email'),
+    titulaire: gv('m-pr-titulaire'), banque: gv('m-pr-banque'),
+    iban: normalizeIban(iban), bic: gv('m-pr-bic').replace(/\s/g, '').toUpperCase()
   });
   saveData(); refreshAll(); closeModal();
 }
@@ -4493,6 +4528,8 @@ function updateProprio(proprioId) {
   if (!nom) { alert('Le nom est obligatoire'); return; }
   const siret = gv('m-pr-siret');
   if (!validateSiret(siret)) { alert('SIRET invalide : il doit contenir exactement 14 chiffres (ou \u00eatre laiss\u00e9 vide).'); return; }
+  const iban = gv('m-pr-iban');
+  if (!validateIbanLight(iban)) { alert('IBAN invalide : format attendu 2 lettres + 2 chiffres + 11 \u00e0 30 caract\u00e8res alphanum\u00e9riques (ou laisser vide).'); return; }
   proprio.type = gv('m-pr-type');
   proprio.nom = nom;
   proprio.adresse = gv('m-pr-adresse');
@@ -4502,6 +4539,10 @@ function updateProprio(proprioId) {
   proprio.tva = gv('m-pr-tva');
   proprio.tel = gv('m-pr-tel');
   proprio.email = gv('m-pr-email');
+  proprio.titulaire = gv('m-pr-titulaire');
+  proprio.banque = gv('m-pr-banque');
+  proprio.iban = normalizeIban(iban);
+  proprio.bic = gv('m-pr-bic').replace(/\s/g, '').toUpperCase();
   saveData(); refreshAll(); closeModal();
 }
 
@@ -5367,6 +5408,8 @@ function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverri
   doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
   doc.text(`Fait \u00e0 ${P.ville||'___________'}, le ${todayFr()}`,25,y);
 
+  drawRibBox(doc, P, h);
+
   doc.setFillColor(44,62,80); doc.rect(0,h-10,w,10,'F');
   doc.setTextColor(255); doc.setFontSize(6); doc.setFont('helvetica','normal');
   doc.text('Document g\u00e9n\u00e9r\u00e9 automatiquement - Gestion Locative',w/2,h-4,{align:'center'});
@@ -5474,6 +5517,8 @@ function genAvisPDF(bail, P, periode, mois, annee, chargesMois, loyerOverride, p
   y+=12;
   doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
   doc.text(`Fait \u00e0 ${P.ville||'___________'}, le ${todayFr()}`,25,y);
+
+  drawRibBox(doc, P, h);
 
   doc.setFillColor(231,76,60); doc.rect(0,h-10,w,10,'F');
   doc.setTextColor(255); doc.setFontSize(6); doc.setFont('helvetica','normal');
@@ -5609,6 +5654,8 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
   doc.text(`Fait \u00e0 ${P.ville||'___________'}, le ${todayFr()}`,25,y);
 
+  drawRibBox(doc, P, h);
+
   doc.setFillColor(44,62,80); doc.rect(0,h-10,w,10,'F');
   doc.setTextColor(255); doc.setFontSize(6); doc.setFont('helvetica','normal');
   doc.text('Document g\u00e9n\u00e9r\u00e9 automatiquement - Gestion Locative',w/2,h-4,{align:'center'});
@@ -5701,6 +5748,8 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   y+=mentions.length*3.5+12;
   doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
   doc.text(`Fait \u00e0 ${P.ville||'___________'}, le ${todayFr()}`,25,y);
+
+  drawRibBox(doc, P, h);
 
   doc.setFillColor(231,76,60); doc.rect(0,h-10,w,10,'F');
   doc.setTextColor(255); doc.setFontSize(6); doc.setFont('helvetica','normal');
@@ -5889,13 +5938,8 @@ function genEntreePDF(bail, P, returnBlob) {
   y+=6;
   doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
   doc.text(`Fait \u00e0 ${P.ville||'___________'}, le ${todayFr()}`,25,y);
-  y+=10;
-  doc.setFont('helvetica','normal'); doc.setFontSize(9);
-  doc.text('Signature du bailleur :', 25, y);
-  doc.text('Signature du locataire :', 115, y);
-  doc.setDrawColor(189,195,199);
-  doc.line(25, y+18, 95, y+18);
-  doc.line(115, y+18, 190, y+18);
+
+  drawRibBox(doc, P, h);
 
   // Footer
   doc.setFillColor(22,160,133); doc.rect(0,h-10,w,10,'F');
@@ -5906,6 +5950,182 @@ function genEntreePDF(bail, P, returnBlob) {
   if (returnBlob) return { blob: doc.output('blob'), filename: _eFilename };
   doc.save(_eFilename);
   return { filename: _eFilename };
+}
+
+// ── ENCART RIB PARTAG\u00c9 (quittance, avis, combin\u00e9, entr\u00e9e) ──
+// Dessine un encart "Coordonn\u00e9es bancaires" juste au-dessus du footer.
+// N'affiche rien si le propri\u00e9taire P n'a aucune donn\u00e9e RIB (pr\u00e9serve le rendu historique).
+function drawRibBox(doc, P, pageHeight) {
+  if (!P) return;
+  const hasRib = P.iban || P.bic || P.banque || P.titulaire;
+  if (!hasRib) return;
+  const h = pageHeight;
+  const x = 15, w = 180;
+  const y = h - 42;
+  const boxH = 22;
+
+  doc.setFillColor(248,250,252); doc.rect(x, y, w, boxH, 'F');
+  doc.setDrawColor(189,195,199); doc.rect(x, y, w, boxH, 'S');
+  // Bandeau titre
+  doc.setFillColor(44,62,80); doc.rect(x, y, w, 5, 'F');
+  doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(7);
+  doc.text('COORDONN\u00c9ES BANCAIRES POUR LE R\u00c8GLEMENT', x + w/2, y + 3.5, {align:'center'});
+
+  let ry = y + 9;
+  doc.setTextColor(44,62,80);
+  const titulaire = P.titulaire || P.nom || '';
+  const banque = P.banque || '';
+  if (titulaire || banque) {
+    const parts = [];
+    if (titulaire) parts.push('Titulaire : ' + titulaire);
+    if (banque) parts.push('Banque : ' + banque);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8);
+    doc.text(parts.join('    \u2022    '), x + 3, ry);
+    ry += 4.5;
+  }
+  if (P.iban) {
+    const ibanRaw = String(P.iban).replace(/\s/g,'').toUpperCase();
+    const ibanFmt = (ibanRaw.match(/.{1,4}/g) || []).join(' ');
+    doc.setFont('helvetica','bold'); doc.setFontSize(9);
+    doc.text('IBAN : ' + ibanFmt, x + 3, ry);
+    ry += 4.5;
+  }
+  if (P.bic) {
+    doc.setFont('helvetica','normal'); doc.setFontSize(8);
+    doc.text('BIC / SWIFT : ' + String(P.bic).replace(/\s/g,'').toUpperCase(), x + 3, ry);
+  }
+}
+
+// ── LECTURE AUTOMATIQUE DU RIB (drag-and-drop PDF) ──
+// Strat\u00e9gie : pdf.js extrait le texte du PDF \u2192 regex extrait IBAN / BIC / banque / titulaire.
+// Les scans (PDF image) \u00e9choueront silencieusement avec un message \u2014 pas d'OCR lourd.
+
+async function extractPdfText(file) {
+  if (!window.pdfjsLib) throw new Error('pdf.js non charg\u00e9 (v\u00e9rifiez votre connexion).');
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let text = '';
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    text += content.items.map(i => i.str).join('\n') + '\n';
+  }
+  return text;
+}
+
+// Longueurs IBAN par code pays (pour tronquer proprement un match glouton)
+const IBAN_LENGTHS = {
+  FR:27, MC:27, GP:27, MQ:27, RE:27, YT:27, GF:27, PM:27, NC:27, PF:27, WF:27,
+  BE:16, DE:22, NL:18, LU:20, CH:21, IT:27, ES:24, PT:25, GB:22, IE:22, AT:20,
+  DK:18, SE:24, NO:15, FI:18, PL:28, GR:27, CY:28, MT:31
+};
+
+function parseRibText(text) {
+  const out = { iban: '', bic: '', banque: '', titulaire: '' };
+  if (!text) return out;
+
+  // IBAN : on tente d'abord via le label "IBAN :", sinon fallback standalone dense
+  const textDense = text.replace(/[\s\-\.]/g, '').toUpperCase();
+  const candidates = [];
+  const labelMatch = text.match(/IBAN[\s:\-\.]*([A-Z]{2}[\s\-]?\d{2}(?:[\s\-]?[A-Z0-9]){11,32})/i);
+  if (labelMatch) candidates.push(labelMatch[1].replace(/[\s\-\.]/g, '').toUpperCase());
+  const denseRegex = /[A-Z]{2}\d{2}[A-Z0-9]{11,30}/g;
+  let dm;
+  while ((dm = denseRegex.exec(textDense)) !== null) candidates.push(dm[0]);
+  for (const c of candidates) {
+    const cc = c.substring(0,2);
+    const expected = IBAN_LENGTHS[cc];
+    if (expected && c.length >= expected) { out.iban = c.substring(0, expected); break; }
+  }
+
+  // BIC : cherche apr\u00e8s un label BIC/SWIFT (plus fiable), sinon standalone en \u00e9cartant l'IBAN
+  const bicLabelMatch = text.match(/(?:BIC|SWIFT|Code\s+BIC|Code\s+SWIFT)[^A-Za-z0-9]{0,10}([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)\b/i);
+  if (bicLabelMatch) {
+    out.bic = bicLabelMatch[1].toUpperCase();
+  } else {
+    const tokens = textDense.match(/[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?/g) || [];
+    for (const t of tokens) {
+      // Exclure le token s'il fait partie de l'IBAN d\u00e9j\u00e0 captur\u00e9
+      if (out.iban && out.iban.includes(t)) continue;
+      // Exclure s'il commence par un code pays IBAN (faux positif)
+      if (IBAN_LENGTHS[t.substring(0,2)]) continue;
+      out.bic = t; break;
+    }
+  }
+
+  // Banque : reconna\u00eetre les noms fr\u00e9quents
+  const banques = [
+    'Cr\u00e9dit Agricole', 'Cr\u00e9dit Mutuel', 'Cr\u00e9dit du Nord', 'Cr\u00e9dit Lyonnais', 'LCL',
+    'BNP Paribas', 'Soci\u00e9t\u00e9 G\u00e9n\u00e9rale', 'Banque Populaire', "Caisse d'\u00c9pargne",
+    'CIC', 'HSBC', 'Boursorama', 'ING', 'Fortuneo', 'Hello bank', 'Monabanq', 'N26',
+    'Revolut', 'Qonto', 'Shine', 'La Banque Postale', 'AXA Banque', 'BPCE', 'BforBank'
+  ];
+  const textLower = text.toLowerCase();
+  for (const b of banques) {
+    if (textLower.includes(b.toLowerCase())) { out.banque = b; break; }
+  }
+
+  // Titulaire : "Titulaire" / "Domicili\u00e9" suivi du nom sur m\u00eame ligne (apr\u00e8s : ou saut)
+  // Cherche apr\u00e8s le label jusqu'au prochain saut de ligne ou fin
+  const titMatch = text.match(/(?:Titulaire(?:\s+du\s+compte)?|Domicili(?:\u00e9|ee)|Nom\s+du\s+titulaire)[^A-Za-z0-9\n]{0,15}([A-Za-z0-9\u00c0-\u024f&\.\s'\-]{3,80})/i);
+  if (titMatch) {
+    out.titulaire = titMatch[1].trim()
+      .replace(/\s{2,}/g, ' ')
+      .replace(/[,;\n].*$/, '')
+      .replace(/\s+(IBAN|BIC|Code)\b.*$/i, '')
+      .trim();
+  }
+
+  return out;
+}
+
+function handleRibDrop(event) {
+  event.preventDefault();
+  const zone = document.getElementById('rib-drop-zone');
+  if (zone) { zone.style.borderColor='var(--border)'; zone.style.background='transparent'; }
+  const files = event.dataTransfer && event.dataTransfer.files;
+  if (!files || !files.length) return;
+  processRibFile(files[0]);
+}
+
+function handleRibFileInput(event) {
+  const file = event.target.files && event.target.files[0];
+  if (file) processRibFile(file);
+}
+
+async function processRibFile(file) {
+  const statusEl = document.getElementById('rib-drop-status');
+  if (!statusEl) return;
+  if (!file.type || !file.type.includes('pdf')) {
+    statusEl.innerHTML = '<span style="color:var(--warning);">\u26a0 Seuls les PDF texte sont support\u00e9s pour la lecture auto. Saisissez manuellement pour les scans/images.</span>';
+    return;
+  }
+  statusEl.innerHTML = '<span style="color:var(--accent);">Lecture du PDF en cours\u2026</span>';
+  try {
+    const text = await extractPdfText(file);
+    if (!text || !text.trim()) {
+      statusEl.innerHTML = '<span style="color:var(--warning);">\u26a0 Aucun texte extractible (scan ou PDF prot\u00e9g\u00e9). Saisissez manuellement.</span>';
+      return;
+    }
+    const parsed = parseRibText(text);
+    const found = [];
+    const ibanEl = document.getElementById('m-pr-iban');
+    const bicEl = document.getElementById('m-pr-bic');
+    const banqueEl = document.getElementById('m-pr-banque');
+    const titEl = document.getElementById('m-pr-titulaire');
+    if (parsed.iban && ibanEl) { ibanEl.value = (parsed.iban.match(/.{1,4}/g)||[]).join(' '); found.push('IBAN'); }
+    if (parsed.bic && bicEl) { bicEl.value = parsed.bic; found.push('BIC'); }
+    if (parsed.banque && banqueEl && !banqueEl.value) { banqueEl.value = parsed.banque; found.push('Banque'); }
+    if (parsed.titulaire && titEl && !titEl.value) { titEl.value = parsed.titulaire; found.push('Titulaire'); }
+    if (found.length) {
+      statusEl.innerHTML = '<span style="color:var(--success);">\u2713 Extrait : <strong>' + found.join(', ') + '</strong> \u2014 v\u00e9rifiez et ajustez avant d\'enregistrer.</span>';
+    } else {
+      statusEl.innerHTML = '<span style="color:var(--warning);">\u26a0 Aucun champ n\'a pu \u00eatre d\u00e9tect\u00e9 automatiquement. Saisissez manuellement.</span>';
+    }
+  } catch (e) {
+    console.error('RIB parse error:', e);
+    statusEl.innerHTML = '<span style="color:var(--danger);">\u2717 Erreur de lecture : ' + (e.message || 'inconnue') + '</span>';
+  }
 }
 
 // ── UTILS ──
