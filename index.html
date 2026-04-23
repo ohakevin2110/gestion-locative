@@ -5441,7 +5441,9 @@ function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverri
   doc.text('Document g\u00e9n\u00e9r\u00e9 automatiquement - Gestion Locative',w/2,h-4,{align:'center'});
 
   const _qFilename = sanitizeFilename(`Quittance_${bail.id}_${mois}_${annee}`) + '.pdf';
-  if (returnBlob) return { blob: doc.output('blob'), filename: _qFilename };
+  const _qBlob = doc.output('blob');
+  if (returnBlob) return { blob: _qBlob, filename: _qFilename };
+  try { autoArchiveToDrive(_qBlob, _qFilename, bail, annee, 'quittance'); } catch(e) {}
   doc.save(_qFilename);
 }
 
@@ -5551,7 +5553,9 @@ function genAvisPDF(bail, P, periode, mois, annee, chargesMois, loyerOverride, p
   doc.text('Document g\u00e9n\u00e9r\u00e9 automatiquement - Gestion Locative',w/2,h-4,{align:'center'});
 
   const _aFilename = sanitizeFilename(`Avis_Echeance_${bail.id}_${mois}_${annee}`) + '.pdf';
-  if (returnBlob) return { blob: doc.output('blob'), filename: _aFilename };
+  const _aBlob = doc.output('blob');
+  if (returnBlob) return { blob: _aBlob, filename: _aFilename };
+  try { autoArchiveToDrive(_aBlob, _aFilename, bail, annee, 'avis'); } catch(e) {}
   doc.save(_aFilename);
 }
 
@@ -5782,7 +5786,9 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   doc.text('Document g\u00e9n\u00e9r\u00e9 automatiquement - Gestion Locative',w/2,h-4,{align:'center'});
 
   const _cFilename = sanitizeFilename(`Quittance_Avis_${bail.id}_${mois}_${annee}`) + '.pdf';
-  if (returnBlob) return { blob: doc.output('blob'), filename: _cFilename };
+  const _cBlob = doc.output('blob');
+  if (returnBlob) return { blob: _cBlob, filename: _cFilename };
+  try { autoArchiveToDrive(_cBlob, _cFilename, bail, annee, 'combine'); } catch(e) {}
   doc.save(_cFilename);
 }
 
@@ -5973,9 +5979,40 @@ function genEntreePDF(bail, P, returnBlob) {
   doc.text('Document g\u00e9n\u00e9r\u00e9 automatiquement - Gestion Locative',w/2,h-4,{align:'center'});
 
   const _eFilename = sanitizeFilename(`Decompte_Entree_${bail.id}_${moisEntreeNom}_${anneeEntree}`) + '.pdf';
-  if (returnBlob) return { blob: doc.output('blob'), filename: _eFilename };
+  const _eBlob = doc.output('blob');
+  if (returnBlob) return { blob: _eBlob, filename: _eFilename };
+  try { autoArchiveToDrive(_eBlob, _eFilename, bail, anneeEntree, 'entree'); } catch(e) {}
   doc.save(_eFilename);
-  return { filename: _eFilename };
+  return { filename: _eFilename, blob: _eBlob };
+}
+
+// ── AUTO-ARCHIVE DRIVE (silencieux, fire-and-forget) ──
+// Appel\u00e9 automatiquement apr\u00e8s un T\u00e9l\u00e9chargement local ou un envoi Email.
+// No-op si l'utilisateur n'est pas connect\u00e9 \u00e0 Drive \u2014 pas d'alerte, juste un console.warn.
+// Arborescence : Gestion Locative / [Proprio] / [Bien] - [Locataire] / [Ann\u00e9e] /
+async function autoArchiveToDrive(pdfBlob, filename, bail, annee, docType) {
+  try {
+    if (typeof isTokenValid !== 'function' || !isTokenValid()) return false;
+    if (!pdfBlob || !filename || !bail) return false;
+    const P = data.proprios.find(x => x.id === bail.proprioId) || {};
+    const loc = data.locataires.find(x => x.id === bail.locId) || {};
+    const bien = data.biens.find(x => x.id === bail.bienId) || {};
+    const proprioNom = (P.nom || 'Sans propri\u00e9taire').replace(/[/\\:*?"<>|]/g, '_');
+    const locNomAA = `${loc.prenom || ''} ${loc.nom || ''}`.trim() || 'Sans locataire';
+    const bienLabel = `${bien.designation || bail.bienId} - ${locNomAA}`.replace(/[/\\:*?"<>|]/g, '_');
+    const anneeStr = String(annee || new Date().getFullYear());
+    const folderPath = ['Gestion Locative', proprioNom, bienLabel, anneeStr];
+    const folderId = await gdriveEnsureFolderPath(folderPath);
+    await gdriveUploadPDF(pdfBlob, filename, folderId);
+    // Log dans l'historique avec flag 'drive-auto' pour distinguer des archivages explicites
+    try { logDocumentGenere({ docType, bailId: bail.id, mois: '', annee: anneeStr, archive: 'drive-auto', filename }); } catch(e) {}
+    // Sauvegarde les donn\u00e9es (historique) sans bloquer
+    try { saveData(); } catch(e) {}
+    return true;
+  } catch (e) {
+    console.warn('Auto-archive Drive skipped:', e && e.message || e);
+    return false;
+  }
 }
 
 // ── ENCART RIB PARTAG\u00c9 (quittance, avis, combin\u00e9, entr\u00e9e) ──
@@ -8291,12 +8328,14 @@ async function envoyerUnEmail(idx) {
     // Relance group\u00e9e : pas de PDF attach\u00e9, c'est un simple email texte
     let pdfBase64 = null;
     let pdfFilename = null;
+    let pdfBlob = null; // gard\u00e9 pour l'auto-archive Drive apr\u00e8s envoi r\u00e9ussi
     if (!eq.isGrouped) {
       const pdfResult = genererPDFBlob(eq);
       if (!pdfResult || !pdfResult.blob) throw new Error('PDF non g\u00e9n\u00e9r\u00e9');
       statusEl.textContent = 'Envoi...';
       pdfBase64 = await blobToBase64(pdfResult.blob);
       pdfFilename = pdfResult.filename;
+      pdfBlob = pdfResult.blob;
     }
     // Lecture du CC global saisi dans la preview
     const ccInput = document.getElementById('email-cc-global');
@@ -8328,6 +8367,10 @@ async function envoyerUnEmail(idx) {
     const _eqBien = _eqBail ? data.biens.find(x=>x.id===_eqBail.bienId) : null;
     const _relanceTag = eq.type === 'relance' ? ' [Relance]' : '';
     logActivity({ type: 'email', proprioId: _eqBail?.proprioId||'', locataireId: eq.locId||'', bailId: eq.bailId||'', bienId: _eqBail?.bienId||'', details: 'Email' + _relanceTag + ' envoyé à ' + to + (_eqBien?' ('+_eqBien.designation+')':'') + (_eqLoc?' - '+((_eqLoc.prenom||'')+' '+_eqLoc.nom).trim():'') });
+    // Auto-archive du PDF envoy\u00e9 sur Drive (fire-and-forget). Skip si pas de PDF (relance group\u00e9e texte).
+    if (pdfBlob && _eqBail) {
+      try { autoArchiveToDrive(pdfBlob, pdfFilename, _eqBail, eq.annee, eq.type); } catch(e) {}
+    }
     // Tracking sp\u00e9cifique relance : on m\u00e9morise la date + le destinataire sur le paiement
     if (eq.type === 'relance') {
       try {
