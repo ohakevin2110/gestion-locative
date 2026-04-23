@@ -1996,7 +1996,7 @@ function renderMonMois() {
   let totalDu = 0, totalPaye = 0, impayes = [], aEncaisser = [];
 
   actifs.forEach(b => {
-    const montant = getMoisTotal(b, cm);
+    const montant = getMoisTotal(b, cm, cy);
     totalDu += montant;
     const loc = data.locataires.find(l => l.id === b.locId);
     const bien = data.biens.find(x => x.id === b.bienId);
@@ -2458,7 +2458,7 @@ function openBienFiche(bienId, pushStateFlag) {
       for (let m = 1; m <= 12; m++) {
         const statut = getPaiementStatut(bail.id, m, cy);
         const paye = statut === 'paye';
-        const montant = getMoisTotal(bail, m);
+        const montant = getMoisTotal(bail, m, cy);
         const isHorsBail = !isBailActifPourMois(bail, m, cy);
         // Compte dans totaux uniquement si le mois est dans la période du bail ET déjà échu
         if (m <= cm && !isHorsBail) { totalDu += montant; if (paye) totalEnc += montant; }
@@ -2825,7 +2825,7 @@ function openLocataireFiche(locId, pushStateFlag) {
         for (let m = 1; m <= 12; m++) {
           const statut = getPaiementStatut(bail.id, m, annee);
           const paye = statut === 'paye';
-          const montant = getMoisTotal(bail, m);
+          const montant = getMoisTotal(bail, m, annee);
           const isTrimMonth = isTrim && trimMois.includes(m);
           // Le loyer est dû tous les mois même sur un bail avec charges trimestrielles.
           // Seuls les baux sans loyer (bail.loyer === 0) et sans charges du mois deviennent "non pertinents".
@@ -2868,7 +2868,7 @@ function openLocataireFiche(locId, pushStateFlag) {
   bauxActifs.forEach(bail => {
     for (let m = 1; m <= cm; m++) {
       if (!isBailActifPourMois(bail, m, cy)) continue;
-      const montant = getMoisTotal(bail, m);
+      const montant = getMoisTotal(bail, m, cy);
       totalDu += montant;
       if (getPaiementStatut(bail.id, m, cy) === 'paye') totalPaye += montant;
     }
@@ -3657,13 +3657,18 @@ function getMontantsPeriode(bail, moisNum) {
   return { skip, loyerAppele, chargesAppelees, periodeLabel, isLoyerTrim, isChargesTrim, isTrimMonth, trimMois };
 }
 
-function getMoisTotal(bail, mois) {
+// Montant attendu pour un (bail, mois[, annee]).
+// Si `annee` est fourni ET que le bail est actif seulement sur une partie du mois
+// (entr\u00e9e en cours de mois ou sortie en cours de mois), le loyer et les charges sont
+// calcul\u00e9s au prorata en jours calendaires r\u00e9els (m\u00eame logique que le D\u00e9compte d'entr\u00e9e).
+// Pour les baux \u00e0 loyer trimestriel, le prorata n'est pas appliqu\u00e9 (cas rare, g\u00e9r\u00e9 manuellement).
+function getMoisTotal(bail, mois, annee) {
   const periLoyer = getPeriodiciteLoyer(bail);
   const periCharges = bail.periodiciteCharges || 'mensuelle';
   const tm = (bail.trimestres || '1,4,7,10').split(',').map(Number);
   const isTrimMonth = tm.includes(mois);
 
-  // Charges du mois
+  // Charges du mois (base pleine)
   let ch = 0;
   if (periCharges === 'trimestrielle') {
     ch = isTrimMonth ? (bail.chargesTrimestrielles || 0) : 0;
@@ -3671,14 +3676,35 @@ function getMoisTotal(bail, mois) {
     ch = bail.charges || 0;
   }
 
-  // Loyer du mois
+  // Loyer du mois (base pleine)
   let loyer = 0;
   if (periLoyer === 'trimestrielle') {
-    // Loyer payé en 1 fois par trimestre : loyer x 3 aux mois d'échéance, 0 les autres mois
     loyer = isTrimMonth ? (bail.loyer || 0) * 3 : 0;
   } else {
-    // Loyer mensuel
     loyer = bail.loyer || 0;
+  }
+
+  // Prorata 1er mois / dernier mois (uniquement si annee fournie et loyer mensuel)
+  if (annee != null && periLoyer !== 'trimestrielle') {
+    const joursDansMois = new Date(annee, mois, 0).getDate();
+    const firstOfMonth = new Date(annee, mois - 1, 1);
+    const lastOfMonth = new Date(annee, mois, 0, 23, 59, 59, 999);
+    let activeStart = firstOfMonth;
+    let activeEnd = lastOfMonth;
+    const d = bail.debut ? new Date(bail.debut) : null;
+    const f = bail.fin ? new Date(bail.fin) : null;
+    if (d && !isNaN(d.getTime()) && d > firstOfMonth) activeStart = d;
+    if (f && !isNaN(f.getTime()) && f < lastOfMonth) activeEnd = f;
+    if (activeStart <= activeEnd) {
+      const joursActifs = Math.floor((activeEnd.setHours(0,0,0,0) - activeStart.setHours(0,0,0,0)) / 86400000) + 1;
+      if (joursActifs > 0 && joursActifs < joursDansMois) {
+        const ratio = joursActifs / joursDansMois;
+        const loyerMens = bail.loyer || 0;
+        loyer = Math.round(loyerMens * ratio * 100) / 100;
+        const chMens = periCharges === 'trimestrielle' ? ((bail.chargesTrimestrielles || 0) / 3) : (bail.charges || 0);
+        ch = Math.round(chMens * ratio * 100) / 100;
+      }
+    }
   }
 
   return loyer + ch;
@@ -3752,7 +3778,7 @@ function renderPaiements() {
   actifs.forEach(b => {
     for (let m = 1; m <= maxMois; m++) {
       if (!isBailActifPourMois(b, m, annee)) continue;
-      const mt = getMoisTotal(b, m);
+      const mt = getMoisTotal(b, m, annee);
       globalDu += mt;
       if (getPaiementStatut(b.id, m, annee) === 'paye') globalEnc += mt;
     }
@@ -3804,7 +3830,7 @@ function renderPaiements() {
     let totalEnc = 0, totalDu = 0, nbPaye = 0, nbTotal = 0;
     for (let m = 1; m <= 12; m++) {
       if (!isBailActifPourMois(bail, m, annee)) continue;
-      const mt = getMoisTotal(bail, m);
+      const mt = getMoisTotal(bail, m, annee);
       totalDu += mt;
       if (getPaiementStatut(bail.id, m, annee) === 'paye') { totalEnc += mt; nbPaye++; }
       nbTotal++;
@@ -3817,7 +3843,7 @@ function renderPaiements() {
     for (let m = 1; m <= 12; m++) {
       const statut = getPaiementStatut(bail.id, m, annee);
       const paye = statut === 'paye';
-      const montant = getMoisTotal(bail, m);
+      const montant = getMoisTotal(bail, m, annee);
       const isTrimMonth = isTrim && trimMois.includes(m);
       const isRelevant = montant > 0;
       const isCurrent = isCurrentYear && m === cm;
@@ -3922,7 +3948,7 @@ function renderDashboard() {
   actifs.forEach(b => {
     for (let m = 1; m <= cm; m++) {
       if (!isBailActifPourMois(b, m, cy)) continue;
-      const montant = getMoisTotal(b, m);
+      const montant = getMoisTotal(b, m, cy);
       totalDu += montant;
       if (getPaiementStatut(b.id, m, cy) === 'paye') totalPaye += montant;
     }
@@ -4024,7 +4050,7 @@ function renderCharts(actifs, cy, cm) {
     let enc = 0, imp = 0;
     actifs.forEach(b => {
       if (!isBailActifPourMois(b, m, cy)) return;
-      const montant = getMoisTotal(b, m);
+      const montant = getMoisTotal(b, m, cy);
       if (m <= cm) {
         if (getPaiementStatut(b.id, m, cy) === 'paye') enc += montant; else imp += montant;
       }
@@ -7628,7 +7654,7 @@ function collectImpayes() {
       for (let m = 1; m <= maxMois; m++) {
         if (!isBailActifPourMois(bail, m, y)) continue;
         if (getPaiementStatut(bail.id, m, y) === 'paye') continue;
-        const montant = getMoisTotal(bail, m);
+        const montant = getMoisTotal(bail, m, y);
         if (montant <= 0) continue; // mois non pertinent (ex: loyer trim hors mois d'échéance)
         const jourEch = bail.jourEcheance || 1;
         const dateEch = new Date(y, m - 1, jourEch);
