@@ -2602,8 +2602,36 @@ function saveFicheBail(bailId, idx, locId) {
   }
   saveData();
   refreshLight();
-  const msg = document.getElementById(prefix + '-save-msg');
-  if (msg) { msg.style.display = 'inline'; setTimeout(() => { msg.style.display = 'none'; }, 2000); }
+  // Retour en mode lecture et re-render de la fiche
+  if (window._ficheEditState && window._ficheEditState.baux) window._ficheEditState.baux[bailId] = false;
+  openLocataireFiche(locId, false);
+}
+
+// ── Toggles lecture/édition pour fiche locataire et baux ──
+function toggleFicheLocEdit(locId) {
+  if (!window._ficheEditState || window._ficheEditState.locId !== locId) {
+    window._ficheEditState = { locId: locId, loc: false, baux: {} };
+  }
+  window._ficheEditState.loc = !window._ficheEditState.loc;
+  openLocataireFiche(locId, false);
+}
+
+function cancelFicheLocEdit(locId) {
+  if (window._ficheEditState) window._ficheEditState.loc = false;
+  openLocataireFiche(locId, false);
+}
+
+function toggleFicheBailEdit(bailId, locId) {
+  if (!window._ficheEditState || window._ficheEditState.locId !== locId) {
+    window._ficheEditState = { locId: locId, loc: false, baux: {} };
+  }
+  window._ficheEditState.baux[bailId] = !window._ficheEditState.baux[bailId];
+  openLocataireFiche(locId, false);
+}
+
+function cancelFicheBailEdit(bailId, locId) {
+  if (window._ficheEditState && window._ficheEditState.baux) window._ficheEditState.baux[bailId] = false;
+  openLocataireFiche(locId, false);
 }
 
 function toggleFicheLocataireTypeFields() {
@@ -2648,11 +2676,9 @@ function saveFicheLocataire(locId) {
   loc.email = gv('fiche-loc-email');
   saveData();
   refreshLight();
-  // Update header name live
-  const header = document.querySelector('#page-locataire-detail .card-header h3');
-  if (header) header.textContent = `${loc.civilite || ''} ${loc.prenom || ''} ${loc.nom || ''}`.trim();
-  const msg = document.getElementById('fiche-loc-save-msg');
-  if (msg) { msg.style.display = 'inline'; setTimeout(() => { msg.style.display = 'none'; }, 2000); }
+  // Retour en mode lecture et re-render de la fiche
+  if (window._ficheEditState) window._ficheEditState.loc = false;
+  openLocataireFiche(locId, false);
 }
 
 function togglePaiementFiche(bailId, mois, annee, locId) {
@@ -2692,68 +2718,112 @@ function openLocataireFiche(locId, pushStateFlag) {
   }
   document.getElementById('page-locataire-detail').classList.add('active');
 
+  // État édition (persiste au rerender de la même fiche, reset au changement de locataire)
+  if (!window._ficheEditState || window._ficheEditState.locId !== locId) {
+    window._ficheEditState = { locId: locId, loc: false, baux: {} };
+  }
+  const _edit = window._ficheEditState;
+
   const locNom = `${loc.civilite || ''} ${loc.prenom || ''} ${loc.nom || ''}`.trim();
   const baux = data.baux.filter(b => b.locId === locId);
   const bauxActifs = baux.filter(b => b.statut === 'Actif');
 
-  // ── Section 1 : Informations personnelles (modifiable) ──
+  // Détection du type (backward compat)
+  const societeCiv = ['Société','SCI','SARL','SAS','EURL','SASU'];
+  const inferredType = loc.type || (societeCiv.includes(loc.civilite) ? 'Société' : 'Particulier');
+  const isSoc = inferredType === 'Société';
+  const escV = s => (s||'').replace(/"/g,'&quot;');
+  const civParticulier = ['M.','Mr','Mme','Mlle','M. et Mme'];
+  const formesSociete = ['Société','SCI','SARL','SAS','EURL','SASU'];
+
+  // Titre d'en-tête : si société, utiliser forme+nom ; sinon civilité+prénom+nom
+  const headerTitle = isSoc
+    ? ((loc.civilite || '') + ' ' + (loc.nom || '')).trim() || locId
+    : locNom || locId;
+
   let html = `
   <div class="card">
-    <div class="card-header" style="background:linear-gradient(135deg,var(--accent),var(--accent-light));">
-      <h3 style="color:white;font-size:18px;">${locNom}</h3>
-      <span style="color:rgba(255,255,255,.7);font-size:12px;">Fiche locataire \u2014 ${locId}</span>
-    </div>
-    <div class="card-body">
-      ${(() => {
-        // Détection du type : si champ explicite, on l'utilise ; sinon on déduit de la civilité (backward compat)
-        const societeCiv = ['Société','SCI','SARL','SAS','EURL','SASU'];
-        const inferredType = loc.type || (societeCiv.includes(loc.civilite) ? 'Société' : 'Particulier');
-        const isSoc = inferredType === 'Société';
-        const escV = s => (s||'').replace(/"/g,'&quot;');
-        const civParticulier = ['M.','Mr','Mme','Mlle','M. et Mme'];
-        const formesSociete = ['Société','SCI','SARL','SAS','EURL','SASU'];
-        return `
-        <div class="form-row">
-          <div class="form-group"><label>Type</label>
-            <select id="fiche-loc-type" onchange="toggleFicheLocataireTypeFields()">
-              <option value="Particulier"${!isSoc?' selected':''}>Particulier</option>
-              <option value="Société"${isSoc?' selected':''}>Société</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-row" id="fiche-loc-particulier-row" style="${isSoc?'display:none;':''}">
-          <div class="form-group"><label>Civilité</label>
-            <select id="fiche-loc-civilite">${civParticulier.map(c=>'<option value="'+c+'"'+(loc.civilite===c?' selected':'')+'>'+c+'</option>').join('')}</select>
-          </div>
-          <div class="form-group"><label>Prénom</label><input type="text" id="fiche-loc-prenom" value="${escV(loc.prenom)}"></div>
-          <div class="form-group"><label>Nom</label><input type="text" id="fiche-loc-nom" value="${escV(loc.nom)}"></div>
-        </div>
-        <div class="form-row" id="fiche-loc-societe-row-1" style="${!isSoc?'display:none;':''}">
-          <div class="form-group"><label>Forme juridique</label>
-            <select id="fiche-loc-forme">${formesSociete.map(c=>'<option value="'+c+'"'+((isSoc && loc.civilite===c)?' selected':'')+'>'+c+'</option>').join('')}</select>
-          </div>
-          <div class="form-group"><label>Raison sociale</label><input type="text" id="fiche-loc-raisonsociale" value="${escV(isSoc?loc.nom:'')}"></div>
-          <div class="form-group"><label>SIRET</label><input type="text" id="fiche-loc-siret" value="${escV(loc.siret)}" placeholder="14 chiffres"></div>
-        </div>
-        <div class="form-row" id="fiche-loc-societe-row-2" style="${!isSoc?'display:none;':''}">
-          <div class="form-group"><label>Représentant — Prénom</label><input type="text" id="fiche-loc-repr-prenom" value="${escV(loc.representantPrenom)}"></div>
-          <div class="form-group"><label>Représentant — Nom</label><input type="text" id="fiche-loc-repr-nom" value="${escV(loc.representantNom)}"></div>
-          <div class="form-group"><label>Fonction</label><input type="text" id="fiche-loc-repr-fonction" value="${escV(loc.representantFonction)}" placeholder="Gérant, Président…"></div>
-        </div>
-        <div class="form-row">
-          <div class="form-group"><label>Adresse</label><input type="text" id="fiche-loc-adresse" value="${escV(loc.adresse)}"></div>
-          <div class="form-group"><label>Code postal</label><input type="text" id="fiche-loc-cp" value="${escV(loc.cp)}"></div>
-          <div class="form-group"><label>Ville</label><input type="text" id="fiche-loc-ville" value="${escV(loc.ville)}"></div>
-        </div>
-        <div class="form-row">
-          <div class="form-group"><label>Téléphone</label><input type="text" id="fiche-loc-tel" value="${escV(loc.tel)}"></div>
-          <div class="form-group"><label>Email</label><input type="email" id="fiche-loc-email" value="${escV(loc.email)}"></div>
-        </div>`;
-      })()}
-      <div style="margin-top:10px;display:flex;gap:10px;align-items:center;">
-        <button class="btn btn-success" onclick="saveFicheLocataire('${locId}')" style="padding:10px 24px;">Enregistrer</button>
-        <span id="fiche-loc-save-msg" style="font-size:13px;color:var(--success);display:none;">\u2713 Enregistr\u00e9</span>
+    <div class="card-header" style="background:linear-gradient(135deg,var(--accent),var(--accent-light));display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <h3 style="color:white;font-size:18px;">${headerTitle}</h3>
+        <span style="color:rgba(255,255,255,.7);font-size:12px;">Fiche locataire \u2014 ${locId}</span>
       </div>
+      ${!_edit.loc ? `<button class="btn btn-sm" onclick="toggleFicheLocEdit('${locId}')" style="background:rgba(255,255,255,0.95);color:var(--accent);font-weight:600;">&#x270E; Modifier</button>` : ''}
+    </div>
+    <div class="card-body">`;
+
+  if (!_edit.loc) {
+    // ── MODE LECTURE ──
+    const row = (label, value) => value
+      ? '<div style="display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);"><div style="min-width:160px;font-size:12px;color:var(--text-light);text-transform:uppercase;font-weight:600;letter-spacing:0.03em;">' + label + '</div><div style="flex:1;font-size:14px;color:var(--text);font-weight:500;">' + value + '</div></div>'
+      : '';
+    const mail = loc.email ? '<a href="mailto:' + loc.email + '" style="color:var(--accent);text-decoration:none;">' + loc.email + '</a>' : '';
+    const tel = loc.tel ? '<a href="tel:' + loc.tel.replace(/\s/g,'') + '" style="color:var(--accent);text-decoration:none;">' + loc.tel + '</a>' : '';
+    const adr = [loc.adresse, [loc.cp, loc.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+    if (isSoc) {
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="display:inline-block;padding:3px 10px;background:var(--accent-glow);color:var(--accent);border-radius:12px;font-size:11px;font-weight:600;text-transform:uppercase;">Société</span></div>';
+      html += row('Forme juridique', loc.civilite || '');
+      html += row('Raison sociale', loc.nom || '');
+      html += row('SIRET', loc.siret || '');
+      const repr = [(loc.representantPrenom||'') + ' ' + (loc.representantNom||'')].map(s=>s.trim()).filter(Boolean).join(' ');
+      const reprFull = repr + (loc.representantFonction ? ' — ' + loc.representantFonction : '');
+      html += row('Représentant', reprFull);
+    } else {
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="display:inline-block;padding:3px 10px;background:var(--accent-glow);color:var(--accent);border-radius:12px;font-size:11px;font-weight:600;text-transform:uppercase;">Particulier</span></div>';
+      html += row('Nom complet', locNom);
+    }
+    html += row('Adresse', adr);
+    html += row('Téléphone', tel);
+    html += row('Email', mail);
+    if (!adr && !tel && !mail && !loc.siret) {
+      html += '<p style="text-align:center;color:var(--text-light);font-style:italic;padding:12px 0;">Aucune information renseignée. Cliquez sur <strong>Modifier</strong> pour compléter la fiche.</p>';
+    }
+  } else {
+    // ── MODE ÉDITION ──
+    html += `
+    <div class="form-row">
+      <div class="form-group"><label>Type</label>
+        <select id="fiche-loc-type" onchange="toggleFicheLocataireTypeFields()">
+          <option value="Particulier"${!isSoc?' selected':''}>Particulier</option>
+          <option value="Société"${isSoc?' selected':''}>Société</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row" id="fiche-loc-particulier-row" style="${isSoc?'display:none;':''}">
+      <div class="form-group"><label>Civilité</label>
+        <select id="fiche-loc-civilite">${civParticulier.map(c=>'<option value="'+c+'"'+(loc.civilite===c?' selected':'')+'>'+c+'</option>').join('')}</select>
+      </div>
+      <div class="form-group"><label>Prénom</label><input type="text" id="fiche-loc-prenom" value="${escV(loc.prenom)}"></div>
+      <div class="form-group"><label>Nom</label><input type="text" id="fiche-loc-nom" value="${escV(loc.nom)}"></div>
+    </div>
+    <div class="form-row" id="fiche-loc-societe-row-1" style="${!isSoc?'display:none;':''}">
+      <div class="form-group"><label>Forme juridique</label>
+        <select id="fiche-loc-forme">${formesSociete.map(c=>'<option value="'+c+'"'+((isSoc && loc.civilite===c)?' selected':'')+'>'+c+'</option>').join('')}</select>
+      </div>
+      <div class="form-group"><label>Raison sociale</label><input type="text" id="fiche-loc-raisonsociale" value="${escV(isSoc?loc.nom:'')}"></div>
+      <div class="form-group"><label>SIRET</label><input type="text" id="fiche-loc-siret" value="${escV(loc.siret)}" placeholder="14 chiffres"></div>
+    </div>
+    <div class="form-row" id="fiche-loc-societe-row-2" style="${!isSoc?'display:none;':''}">
+      <div class="form-group"><label>Représentant — Prénom</label><input type="text" id="fiche-loc-repr-prenom" value="${escV(loc.representantPrenom)}"></div>
+      <div class="form-group"><label>Représentant — Nom</label><input type="text" id="fiche-loc-repr-nom" value="${escV(loc.representantNom)}"></div>
+      <div class="form-group"><label>Fonction</label><input type="text" id="fiche-loc-repr-fonction" value="${escV(loc.representantFonction)}" placeholder="Gérant, Président…"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Adresse</label><input type="text" id="fiche-loc-adresse" value="${escV(loc.adresse)}"></div>
+      <div class="form-group"><label>Code postal</label><input type="text" id="fiche-loc-cp" value="${escV(loc.cp)}"></div>
+      <div class="form-group"><label>Ville</label><input type="text" id="fiche-loc-ville" value="${escV(loc.ville)}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Téléphone</label><input type="text" id="fiche-loc-tel" value="${escV(loc.tel)}"></div>
+      <div class="form-group"><label>Email</label><input type="email" id="fiche-loc-email" value="${escV(loc.email)}"></div>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center;">
+      <button class="btn btn-success" onclick="saveFicheLocataire('${locId}')" style="padding:10px 24px;">&#x2713; Enregistrer</button>
+      <button class="btn btn-outline" onclick="cancelFicheLocEdit('${locId}')" style="padding:10px 20px;">Annuler</button>
+      <span id="fiche-loc-save-msg" style="font-size:13px;color:var(--success);display:none;">\u2713 Enregistr\u00e9</span>
+    </div>`;
+  }
+  html += `
     </div>
   </div>`;
 
@@ -2771,33 +2841,59 @@ function openLocataireFiche(locId, pushStateFlag) {
       const isTrim = b.periodiciteCharges === 'trimestrielle';
       const st = b.statut === 'Actif';
       const prefix = 'fiche-bail-' + idx;
+      const bailInEdit = !!(_edit.baux && _edit.baux[b.id]);
       html += '<div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:12px;' + (st ? 'border-left:4px solid var(--success);' : 'border-left:4px solid var(--text-light);opacity:.8;') + '">';
-      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:12px;flex-wrap:wrap;">';
       html += '<span style="font-weight:700;color:var(--primary);">' + b.id + ' \u2014 ' + (bien ? bien.designation : b.bienId) + '</span>';
+      html += '<div style="display:flex;gap:8px;align-items:center;">';
       html += '<span class="status status-' + (st ? 'active' : '') + '">' + b.statut + '</span>';
-      html += '</div>';
-      html += '<div class="form-row">';
-      html += '<div class="form-group"><label>Propri\u00e9taire</label><select id="' + prefix + '-proprio">' + data.proprios.map(p => '<option value="' + p.id + '"' + (p.id === b.proprioId ? ' selected' : '') + '>' + p.nom + '</option>').join('') + '</select></div>';
-      html += '<div class="form-group"><label>Bien</label><select id="' + prefix + '-bien">' + data.biens.map(bi => '<option value="' + bi.id + '"' + (bi.id === b.bienId ? ' selected' : '') + '>' + bi.designation + '</option>').join('') + '</select></div>';
-      html += '<div class="form-group"><label>Statut</label><select id="' + prefix + '-statut">' + ['Actif','R\u00e9sili\u00e9','En attente','Termin\u00e9','Expir\u00e9'].map(s => '<option value="' + s + '"' + (b.statut === s ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></div>';
-      html += '</div>';
-      html += '<div class="form-row">';
-      html += '<div class="form-group"><label>D\u00e9but</label><input type="date" id="' + prefix + '-debut" value="' + (b.debut || '') + '"></div>';
-      html += '<div class="form-group"><label>Fin</label><input type="date" id="' + prefix + '-fin" value="' + (b.fin || '') + '"></div>';
-      html += '</div>';
-      html += '<div class="form-row">';
-      const perioLoyer = getPeriodiciteLoyer(b);
-      const isLoyerTrim = perioLoyer === 'trimestrielle';
-      html += '<div class="form-group"><label>Loyer HC (\u20ac)</label><input type="number" step="0.01" id="' + prefix + '-loyer" value="' + (b.loyer || 0) + '"></div>';
-      html += '<div class="form-group"><label>P\u00e9riodicit\u00e9 loyer</label><select id="' + prefix + '-perioloyer"><option value="mensuelle"' + (!isLoyerTrim ? ' selected' : '') + '>Mensuelle</option><option value="trimestrielle"' + (isLoyerTrim ? ' selected' : '') + '>Trimestrielle</option></select></div>';
-      html += '<div class="form-group"><label>P\u00e9riodicit\u00e9 charges</label><select id="' + prefix + '-periodicite" onchange="ficheBailPerioChange(' + idx + ')"><option value="mensuelle"' + (!isTrim ? ' selected' : '') + '>Mensuelle</option><option value="trimestrielle"' + (isTrim ? ' selected' : '') + '>Trimestrielle</option></select></div>';
-      html += '<div class="form-group" id="' + prefix + '-charges-mens" style="' + (isTrim ? 'display:none;' : '') + '"><label>Charges / mois (\u20ac)</label><input type="number" step="0.01" id="' + prefix + '-charges" value="' + (b.charges || 0) + '"></div>';
-      html += '<div class="form-group" id="' + prefix + '-charges-trim" style="' + (!isTrim ? 'display:none;' : '') + '"><label>Charges / trimestre (\u20ac)</label><input type="number" step="0.01" id="' + prefix + '-chargestrim" value="' + (b.chargesTrimestrielles || 0) + '"></div>';
-      html += '</div>';
-      html += '<div style="margin-top:8px;display:flex;gap:10px;align-items:center;">';
-      html += '<button class="btn btn-success btn-sm" onclick="saveFicheBail(\'' + b.id + '\',' + idx + ',\'' + locId + '\')">Enregistrer</button>';
-      html += '<span id="' + prefix + '-save-msg" style="font-size:12px;color:var(--success);display:none;">\u2713 Enregistr\u00e9</span>';
-      html += '</div>';
+      if (!bailInEdit) {
+        html += '<button class="btn btn-sm" onclick="toggleFicheBailEdit(\'' + b.id + '\',\'' + locId + '\')" style="background:var(--accent-glow);color:var(--accent);font-weight:600;">&#x270E; Modifier</button>';
+      }
+      html += '</div></div>';
+
+      if (!bailInEdit) {
+        // ── MODE LECTURE BAIL ──
+        const perioLoyer = getPeriodiciteLoyer(b);
+        const isLoyerTrim = perioLoyer === 'trimestrielle';
+        const periode = [b.debut ? fmtDate(b.debut) : '?', b.fin ? fmtDate(b.fin) : '?'].join(' → ');
+        const chargesTxt = isTrim
+          ? fmt(b.chargesTrimestrielles || 0) + ' / trimestre'
+          : fmt(b.charges || 0) + ' / mois';
+        const bailRow = (label, value) => value
+          ? '<div style="display:flex;gap:12px;padding:6px 0;border-bottom:1px solid var(--border);"><div style="min-width:150px;font-size:11px;color:var(--text-light);text-transform:uppercase;font-weight:600;letter-spacing:0.03em;">' + label + '</div><div style="flex:1;font-size:13px;color:var(--text);font-weight:500;">' + value + '</div></div>'
+          : '';
+        html += bailRow('Propriétaire', proprio ? proprio.nom : b.proprioId);
+        html += bailRow('Bien', bien ? bien.designation : b.bienId);
+        html += bailRow('Période', periode);
+        html += bailRow('Loyer HC', fmt(b.loyer || 0) + ' ' + (isLoyerTrim ? '/ trimestre' : '/ mois'));
+        html += bailRow('Charges', chargesTxt);
+      } else {
+        // ── MODE ÉDITION BAIL ──
+        html += '<div class="form-row">';
+        html += '<div class="form-group"><label>Propri\u00e9taire</label><select id="' + prefix + '-proprio">' + data.proprios.map(p => '<option value="' + p.id + '"' + (p.id === b.proprioId ? ' selected' : '') + '>' + p.nom + '</option>').join('') + '</select></div>';
+        html += '<div class="form-group"><label>Bien</label><select id="' + prefix + '-bien">' + data.biens.map(bi => '<option value="' + bi.id + '"' + (bi.id === b.bienId ? ' selected' : '') + '>' + bi.designation + '</option>').join('') + '</select></div>';
+        html += '<div class="form-group"><label>Statut</label><select id="' + prefix + '-statut">' + ['Actif','R\u00e9sili\u00e9','En attente','Termin\u00e9','Expir\u00e9'].map(s => '<option value="' + s + '"' + (b.statut === s ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></div>';
+        html += '</div>';
+        html += '<div class="form-row">';
+        html += '<div class="form-group"><label>D\u00e9but</label><input type="date" id="' + prefix + '-debut" value="' + (b.debut || '') + '"></div>';
+        html += '<div class="form-group"><label>Fin</label><input type="date" id="' + prefix + '-fin" value="' + (b.fin || '') + '"></div>';
+        html += '</div>';
+        html += '<div class="form-row">';
+        const perioLoyer = getPeriodiciteLoyer(b);
+        const isLoyerTrim = perioLoyer === 'trimestrielle';
+        html += '<div class="form-group"><label>Loyer HC (\u20ac)</label><input type="number" step="0.01" id="' + prefix + '-loyer" value="' + (b.loyer || 0) + '"></div>';
+        html += '<div class="form-group"><label>P\u00e9riodicit\u00e9 loyer</label><select id="' + prefix + '-perioloyer"><option value="mensuelle"' + (!isLoyerTrim ? ' selected' : '') + '>Mensuelle</option><option value="trimestrielle"' + (isLoyerTrim ? ' selected' : '') + '>Trimestrielle</option></select></div>';
+        html += '<div class="form-group"><label>P\u00e9riodicit\u00e9 charges</label><select id="' + prefix + '-periodicite" onchange="ficheBailPerioChange(' + idx + ')"><option value="mensuelle"' + (!isTrim ? ' selected' : '') + '>Mensuelle</option><option value="trimestrielle"' + (isTrim ? ' selected' : '') + '>Trimestrielle</option></select></div>';
+        html += '<div class="form-group" id="' + prefix + '-charges-mens" style="' + (isTrim ? 'display:none;' : '') + '"><label>Charges / mois (\u20ac)</label><input type="number" step="0.01" id="' + prefix + '-charges" value="' + (b.charges || 0) + '"></div>';
+        html += '<div class="form-group" id="' + prefix + '-charges-trim" style="' + (!isTrim ? 'display:none;' : '') + '"><label>Charges / trimestre (\u20ac)</label><input type="number" step="0.01" id="' + prefix + '-chargestrim" value="' + (b.chargesTrimestrielles || 0) + '"></div>';
+        html += '</div>';
+        html += '<div style="margin-top:10px;display:flex;gap:10px;align-items:center;">';
+        html += '<button class="btn btn-success btn-sm" onclick="saveFicheBail(\'' + b.id + '\',' + idx + ',\'' + locId + '\')">&#x2713; Enregistrer</button>';
+        html += '<button class="btn btn-outline btn-sm" onclick="cancelFicheBailEdit(\'' + b.id + '\',\'' + locId + '\')">Annuler</button>';
+        html += '<span id="' + prefix + '-save-msg" style="font-size:12px;color:var(--success);display:none;">\u2713 Enregistr\u00e9</span>';
+        html += '</div>';
+      }
 
       // ── Documents attachés à CE bail ──
       const bailDocs = (data.documents || []).filter(dd => dd.bailId === b.id).sort((a,c) => (c.date||'').localeCompare(a.date||''));
