@@ -1197,7 +1197,7 @@ input, select, textarea {
 
 <script>
 // ── DATA ──
-let data = { proprios: [], biens: [], locataires: [], baux: [], paiements: [], historique: [] };
+let data = { proprios: [], biens: [], locataires: [], baux: [], paiements: [], historique: [], documents: [] };
 
 // Données de simulation pré-remplies
 const DEMO_DATA = {
@@ -1562,6 +1562,7 @@ function loadData() {
     delete b.chargesAnnuelles;
   });
   if (!data.historique) { data.historique = []; migrated = true; }
+  if (!data.documents) { data.documents = []; migrated = true; }
   if (migrated) saveData();
   refreshAll();
   // Restaurer la fiche (bien/locataire) depuis le hash si le refresh a été fait dessus
@@ -2797,6 +2798,38 @@ function openLocataireFiche(locId, pushStateFlag) {
       html += '<button class="btn btn-success btn-sm" onclick="saveFicheBail(\'' + b.id + '\',' + idx + ',\'' + locId + '\')">Enregistrer</button>';
       html += '<span id="' + prefix + '-save-msg" style="font-size:12px;color:var(--success);display:none;">\u2713 Enregistr\u00e9</span>';
       html += '</div>';
+
+      // ── Documents attachés à CE bail ──
+      const bailDocs = (data.documents || []).filter(dd => dd.bailId === b.id).sort((a,c) => (c.date||'').localeCompare(a.date||''));
+      html += '<div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border);">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+      html += '<strong style="font-size:13px;color:var(--primary);">📎 Documents du bail (' + bailDocs.length + ')</strong>';
+      html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
+      html += '<button type="button" class="btn btn-sm" onclick="uploadFromBail(\'' + locId + '\',\'' + b.id + '\',\'bail\')" style="background:#0F1E36;color:white;font-size:11px;">+ Bail signé</button>';
+      html += '<button type="button" class="btn btn-sm" onclick="uploadFromBail(\'' + locId + '\',\'' + b.id + '\',\'edl-entree\')" style="background:#00b894;color:white;font-size:11px;">+ EDL entrée</button>';
+      html += '<button type="button" class="btn btn-sm" onclick="uploadFromBail(\'' + locId + '\',\'' + b.id + '\',\'edl-sortie\')" style="background:#e17055;color:white;font-size:11px;">+ EDL sortie</button>';
+      html += '<button type="button" class="btn btn-sm" onclick="uploadFromBail(\'' + locId + '\',\'' + b.id + '\',\'autre\')" style="background:#636e72;color:white;font-size:11px;">+ Autre</button>';
+      html += '</div></div>';
+      if (bailDocs.length === 0) {
+        html += '<div style="font-size:12px;color:var(--text-light);font-style:italic;">Aucun document attaché à ce bail. Utilisez les boutons ci-dessus pour en ajouter.</div>';
+      } else {
+        html += '<div style="display:flex;flex-direction:column;gap:6px;">';
+        bailDocs.forEach(dd => {
+          const catLabel = (DOC_CATEGORIES[dd.categorie] || DOC_CATEGORIES.autre).label;
+          const dt = new Date(dd.date);
+          const dateStr = dt.toLocaleDateString('fr-FR');
+          html += '<div style="display:flex;gap:8px;align-items:center;padding:6px 10px;background:#f8f9fb;border-radius:6px;font-size:12px;">';
+          html += '<span style="font-size:18px;">' + getDocIcon(dd.mimeType, dd.categorie) + '</span>';
+          html += '<div style="flex:1;min-width:0;"><div style="font-weight:600;word-break:break-all;">' + dd.nom + '</div>';
+          html += '<div style="font-size:10px;color:var(--text-light);">' + catLabel + ' · ' + dateStr + ' · ' + formatFileSize(dd.taille) + '</div></div>';
+          html += '<a href="' + dd.driveUrl + '" target="_blank" rel="noopener" class="btn btn-sm" style="background:#0F1E36;color:white;font-size:11px;padding:4px 10px;">Ouvrir</a>';
+          html += '<button type="button" class="btn btn-sm" onclick="supprimerDocument(\'' + dd.id + '\')" style="background:#fef0ef;color:var(--danger);font-size:11px;padding:4px 10px;">🗑</button>';
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+
       html += '</div>';
     });
   }
@@ -2931,6 +2964,90 @@ function openLocataireFiche(locId, pushStateFlag) {
       <div id="fiche-doc-result" style="margin-top:12px;"></div>
     </div>
   </div>`;
+
+  // ── Section 6 : Documents du locataire (upload & consultation) ──
+  const locDocs = (data.documents || []).filter(d => d.locataireId === locId).sort((a,b) => (b.date||'').localeCompare(a.date||''));
+  const bauxForDocs = data.baux.filter(b => b.locId === locId);
+  const catKeys = Object.keys(DOC_CATEGORIES);
+  html += `<div class="card" style="margin-top:16px;">
+    <div class="card-header"><h3>📎 Documents (${locDocs.length})</h3></div>
+    <div class="card-body">
+      <div style="background:#f8f9fb;border:1px dashed var(--border);border-radius:8px;padding:14px;margin-bottom:14px;">
+        <div style="font-weight:600;margin-bottom:10px;color:var(--primary);">Uploader un document sur Google Drive</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Catégorie</label>
+            <select id="doc-upload-cat">
+              ${catKeys.map(k => '<option value="' + k + '">' + DOC_CATEGORIES[k].icon + ' ' + DOC_CATEGORIES[k].label + '</option>').join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Bail associé (si pertinent)</label>
+            <select id="doc-upload-bail">
+              <option value="">— Aucun / bail actif —</option>
+              ${bauxForDocs.map(b => {
+                const bi = data.biens.find(x => x.id === b.bienId);
+                return '<option value="' + b.id + '">' + b.id + ' — ' + (bi ? bi.designation : b.bienId) + ' (' + b.statut + ')</option>';
+              }).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:2;">
+            <label>Fichier(s) — tous formats acceptés</label>
+            <input type="file" id="doc-upload-input" multiple style="padding:6px;">
+          </div>
+          <div class="form-group">
+            <label>Description (facultatif)</label>
+            <input type="text" id="doc-upload-desc" placeholder="ex: Fiche de paie mars">
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:6px;">
+          <button class="btn btn-success" onclick="handleDocUpload('${locId}')" style="padding:10px 20px;">&#x2601; Uploader sur Drive</button>
+          <span style="font-size:11px;color:var(--text-light);">Les fichiers sont stockés dans : Gestion Locative / Propriétaire / Bien / Locataire / Catégorie</span>
+        </div>
+        <div id="doc-upload-result" style="margin-top:12px;"></div>
+      </div>`;
+
+  // Onglets par catégorie
+  html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;" id="doc-tabs">';
+  html += '<button type="button" class="btn btn-sm doc-tab-btn active" data-cat="all" onclick="filterDocs(\'all\')" style="background:var(--primary);color:white;">Tous (' + locDocs.length + ')</button>';
+  catKeys.forEach(k => {
+    const count = locDocs.filter(d => d.categorie === k).length;
+    html += '<button type="button" class="btn btn-sm doc-tab-btn" data-cat="' + k + '" onclick="filterDocs(\'' + k + '\')" style="background:#f0f4f8;color:var(--text);">' + DOC_CATEGORIES[k].icon + ' ' + DOC_CATEGORIES[k].label + ' (' + count + ')</button>';
+  });
+  html += '</div>';
+
+  // Liste des documents
+  html += '<div id="doc-list">';
+  if (locDocs.length === 0) {
+    html += '<p style="color:var(--text-light);text-align:center;padding:20px;">Aucun document uploadé pour ce locataire.</p>';
+  } else {
+    locDocs.forEach(d => {
+      const bail = d.bailId ? data.baux.find(b => b.id === d.bailId) : null;
+      const bien = bail ? data.biens.find(x => x.id === bail.bienId) : null;
+      const dt = new Date(d.date);
+      const dateStr = dt.toLocaleDateString('fr-FR') + ' à ' + dt.toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'});
+      const catLabel = (DOC_CATEGORIES[d.categorie] || DOC_CATEGORIES.autre).label;
+      html += '<div class="doc-row" data-cat="' + d.categorie + '" style="display:flex;gap:12px;align-items:center;padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;background:white;">';
+      html += '<span style="font-size:26px;flex-shrink:0;">' + getDocIcon(d.mimeType, d.categorie) + '</span>';
+      html += '<div style="flex:1;min-width:0;">';
+      html += '<div style="font-weight:600;color:var(--text);font-size:13px;word-break:break-all;">' + d.nom + '</div>';
+      html += '<div style="font-size:11px;color:var(--text-light);margin-top:3px;">';
+      html += '<span style="display:inline-block;padding:2px 8px;background:#f0f4f8;border-radius:10px;margin-right:6px;">' + catLabel + '</span>';
+      html += dateStr + ' · ' + formatFileSize(d.taille);
+      if (bien) html += ' · ' + bien.designation;
+      if (d.description) html += ' · <em>' + d.description + '</em>';
+      html += '</div></div>';
+      html += '<div style="display:flex;gap:6px;flex-shrink:0;">';
+      html += '<a class="btn btn-sm" href="' + d.driveUrl + '" target="_blank" rel="noopener" style="background:#0F1E36;color:white;">&#x2601; Ouvrir</a>';
+      html += '<button type="button" class="btn btn-sm" onclick="supprimerDocument(\'' + d.id + '\')" style="background:#fef0ef;color:var(--danger);">🗑 Supprimer</button>';
+      html += '</div>';
+      html += '</div>';
+    });
+  }
+  html += '</div>';
+  html += '</div></div>';
 
   // ── Historique d'activité ──
   const locHisto = (data.historique || []).filter(h => h.locataireId === locId).sort((a,b) => b.date.localeCompare(a.date));
@@ -4244,6 +4361,9 @@ function _removeById(arr, id) { const i = arr.findIndex(x => x.id === id); if (i
 function _purgeHistoriqueDocs(bailIds) {
   data.historique = (data.historique || []).filter(h => !h.bailId || !bailIds.includes(h.bailId));
   data.documentsGeneres = (data.documentsGeneres || []).filter(d => !d.bailId || !bailIds.includes(d.bailId));
+  // Documents uploadés liés à ces baux : la référence est retirée de l'outil
+  // (les fichiers restent sur Google Drive pour éviter toute perte accidentelle)
+  data.documents = (data.documents || []).filter(d => !d.bailId || !bailIds.includes(d.bailId));
 }
 
 function deleteProprio(idOrIdx) {
@@ -4307,6 +4427,7 @@ function deleteLocataire(idOrIdx) {
       data.baux = data.baux.filter(b => b.locId !== l.id);
       _purgeHistoriqueDocs(bailIds);
       data.historique = (data.historique || []).filter(h => h.locataireId !== l.id);
+      data.documents = (data.documents || []).filter(d => d.locataireId !== l.id);
       _removeById(data.locataires, l.id);
       saveData(); refreshAll();
     });
@@ -4314,6 +4435,7 @@ function deleteLocataire(idOrIdx) {
   }
   showConfirm('\u00cates-vous s\u00fbr de vouloir supprimer ce locataire ?', () => {
     data.historique = (data.historique || []).filter(h => h.locataireId !== l.id);
+    data.documents = (data.documents || []).filter(d => d.locataireId !== l.id);
     _removeById(data.locataires, l.id);
     saveData(); refreshAll();
   });
@@ -7039,7 +7161,7 @@ function handleLogout() {
   try { localStorage.removeItem('gl_user'); } catch(e) {}
 
   // Reset data
-  data = { proprios: [], biens: [], locataires: [], baux: [], paiements: [], historique: [] };
+  data = { proprios: [], biens: [], locataires: [], baux: [], paiements: [], historique: [], documents: [] };
 
   // Show login
   showLogin();
@@ -7239,6 +7361,228 @@ async function gdriveUploadPDF(blob, filename, folderId) {
     throw new Error('Upload Drive échoué: ' + resp.status + ' ' + err);
   }
   return resp;
+}
+
+// ── Upload générique (tous types de fichiers) avec métadonnées retournées ──
+async function gdriveUploadFile(file, filename, folderId) {
+  const metadata = { name: filename, parents: [folderId] };
+  if (file.type) metadata.mimeType = file.type;
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+  form.append('file', file);
+  const resp = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,size,webViewLink,webContentLink', {
+    method: 'POST', headers: { 'Authorization': 'Bearer ' + gdriveToken }, body: form
+  });
+  if (!resp.ok) {
+    const err = await resp.text().catch(() => 'Unknown error');
+    throw new Error('Upload Drive échoué: ' + resp.status + ' ' + err);
+  }
+  return resp.json();
+}
+
+async function gdriveDeleteFile(fileId) {
+  if (!fileId) return;
+  const resp = await fetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fileId), {
+    method: 'DELETE', headers: { 'Authorization': 'Bearer ' + gdriveToken }
+  });
+  // 204 = supprimé, 404 = déjà absent → on considère OK
+  if (!resp.ok && resp.status !== 404) {
+    const err = await resp.text().catch(() => '');
+    throw new Error('Suppression Drive échouée: ' + resp.status + ' ' + err);
+  }
+}
+
+// ── CATÉGORIES DOCUMENTS ──
+const DOC_CATEGORIES = {
+  'dossier':     { label: 'Dossier locataire', folder: 'Dossier locataire', icon: '📁' },
+  'bail':        { label: 'Bail signé',        folder: 'Bail',              icon: '📝' },
+  'edl-entree':  { label: 'EDL entrée',        folder: 'Etat des lieux',    icon: '🔑' },
+  'edl-sortie':  { label: 'EDL sortie',        folder: 'Etat des lieux',    icon: '🏁' },
+  'autre':       { label: 'Autre',             folder: 'Autres documents',  icon: '📎' }
+};
+
+function sanitizeFolderName(s) {
+  return (s || '').replace(/[/\\:*?"<>|]/g, '_').trim() || 'Sans nom';
+}
+
+function formatFileSize(bytes) {
+  if (!bytes && bytes !== 0) return '';
+  const n = Number(bytes);
+  if (n < 1024) return n + ' o';
+  if (n < 1024*1024) return (n/1024).toFixed(1) + ' Ko';
+  return (n/1024/1024).toFixed(1) + ' Mo';
+}
+
+function getDocIcon(mimeType, categorie) {
+  if (mimeType && mimeType.startsWith('image/')) return '🖼️';
+  if (mimeType === 'application/pdf') return '📕';
+  if (mimeType && (mimeType.includes('word') || mimeType.includes('officedocument.word'))) return '📘';
+  if (mimeType && (mimeType.includes('sheet') || mimeType.includes('excel'))) return '📗';
+  return (DOC_CATEGORIES[categorie] && DOC_CATEGORIES[categorie].icon) || '📄';
+}
+
+// ── Upload d'un ou plusieurs fichiers liés à un locataire/bail ──
+async function uploadDocumentsLocataire(locId, categorie, fileList, opts) {
+  opts = opts || {};
+  if (!isTokenValid()) {
+    if (currentUser) { requestDriveToken(); }
+    throw new Error('Session Google expirée. Cliquez sur "Sync Drive" pour vous reconnecter.');
+  }
+  const loc = data.locataires.find(x => x.id === locId);
+  if (!loc) throw new Error('Locataire introuvable');
+
+  // Bail associé (optionnel) : si catégorie bail/edl, on prend le bail précisé ou le bail actif
+  let bail = null;
+  if (opts.bailId) bail = data.baux.find(b => b.id === opts.bailId);
+  if (!bail) bail = data.baux.find(b => b.locId === locId && b.statut === 'Actif');
+
+  const bien = bail ? data.biens.find(b => b.id === bail.bienId) : null;
+  const proprio = bail ? data.proprios.find(p => p.id === bail.proprioId) : null;
+
+  const proprioNom = sanitizeFolderName(proprio ? proprio.nom : 'Sans proprietaire');
+  const locNom = sanitizeFolderName(`${loc.prenom || ''} ${loc.nom || ''}`.trim() || loc.id);
+  const bienLabel = sanitizeFolderName(bien ? bien.designation : 'Sans bien');
+  const catFolder = sanitizeFolderName((DOC_CATEGORIES[categorie] || DOC_CATEGORIES.autre).folder);
+
+  const folderPath = ['Gestion Locative', proprioNom, bienLabel, locNom, catFolder];
+  const folderId = await gdriveEnsureFolderPath(folderPath);
+
+  if (!data.documents) data.documents = [];
+  const results = [];
+  for (const file of fileList) {
+    const meta = await gdriveUploadFile(file, file.name, folderId);
+    const doc = {
+      id: 'DOC' + Date.now() + Math.floor(Math.random()*1000),
+      locataireId: locId,
+      bailId: bail ? bail.id : '',
+      bienId: bien ? bien.id : '',
+      proprioId: proprio ? proprio.id : '',
+      categorie: categorie,
+      nom: file.name,
+      description: opts.description || '',
+      driveFileId: meta.id,
+      driveUrl: meta.webViewLink || ('https://drive.google.com/file/d/' + meta.id + '/view'),
+      mimeType: meta.mimeType || file.type || '',
+      taille: Number(meta.size || file.size || 0),
+      date: new Date().toISOString()
+    };
+    data.documents.push(doc);
+    results.push(doc);
+    const catLabel = (DOC_CATEGORIES[categorie] || DOC_CATEGORIES.autre).label;
+    try {
+      logActivity({
+        type: 'document',
+        proprioId: doc.proprioId, locataireId: doc.locataireId,
+        bailId: doc.bailId, bienId: doc.bienId,
+        details: catLabel + ' : ' + file.name + ' uploadé sur Drive'
+      });
+    } catch(e) {}
+  }
+  saveData();
+  return results;
+}
+
+async function supprimerDocument(docId) {
+  const doc = (data.documents || []).find(d => d.id === docId);
+  if (!doc) return;
+  if (!confirm('Supprimer "' + doc.nom + '" (Drive + historique de l\'outil) ?')) return;
+  try {
+    if (isTokenValid()) {
+      await gdriveDeleteFile(doc.driveFileId);
+    } else {
+      // Si le token n'est pas valide, on prévient
+      if (!confirm('Session Google non active. Le fichier restera sur Drive mais sera retiré de l\'outil. Continuer ?')) return;
+    }
+  } catch (e) {
+    if (!confirm('La suppression sur Drive a échoué (' + (e.message||e) + '). Retirer quand même de l\'outil ?')) return;
+  }
+  data.documents = (data.documents || []).filter(d => d.id !== docId);
+  try {
+    logActivity({
+      type: 'document',
+      proprioId: doc.proprioId, locataireId: doc.locataireId,
+      bailId: doc.bailId, bienId: doc.bienId,
+      details: 'Document supprimé : ' + doc.nom
+    });
+  } catch(e) {}
+  saveData();
+  // Rafraîchir la fiche si ouverte
+  if (doc.locataireId) {
+    const ficheEl = document.getElementById('page-locataire-detail');
+    if (ficheEl && ficheEl.classList.contains('active')) {
+      openLocataireFiche(doc.locataireId, false);
+    }
+  }
+}
+
+// Upload rapide depuis une carte de bail : ouvre un file picker, upload dans la catégorie + bail ciblé
+function uploadFromBail(locId, bailId, categorie) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.style.display = 'none';
+  input.addEventListener('change', async () => {
+    if (!input.files || input.files.length === 0) return;
+    // Feedback visuel via le bloc résultat global s'il existe
+    const resultEl = document.getElementById('doc-upload-result');
+    if (resultEl) resultEl.innerHTML = '<div class="alert" style="background:#e3f2fd;border:1px solid #90caf9;padding:10px;border-radius:6px;">Envoi sur Google Drive en cours…</div>';
+    try {
+      const uploaded = await uploadDocumentsLocataire(locId, categorie, Array.from(input.files), { bailId });
+      openLocataireFiche(locId, false);
+      // Tenter d'afficher un mini-message après refresh
+      setTimeout(() => {
+        const r = document.getElementById('doc-upload-result');
+        if (r) r.innerHTML = '<div class="alert alert-success">' + uploaded.length + ' fichier(s) attaché(s) au bail ' + bailId + '.</div>';
+      }, 50);
+    } catch (e) {
+      alert('Erreur upload : ' + (e.message || e));
+    } finally {
+      document.body.removeChild(input);
+    }
+  });
+  document.body.appendChild(input);
+  input.click();
+}
+
+// Filtre les documents affichés par catégorie (onglets)
+function filterDocs(cat) {
+  const rows = document.querySelectorAll('.doc-row');
+  rows.forEach(r => {
+    if (cat === 'all' || r.getAttribute('data-cat') === cat) r.style.display = '';
+    else r.style.display = 'none';
+  });
+  document.querySelectorAll('.doc-tab-btn').forEach(b => {
+    const isActive = b.getAttribute('data-cat') === cat;
+    b.classList.toggle('active', isActive);
+    b.style.background = isActive ? 'var(--primary)' : '#f0f4f8';
+    b.style.color = isActive ? 'white' : 'var(--text)';
+  });
+}
+
+// Handler déclenché par le bouton d'upload (fiche locataire)
+async function handleDocUpload(locId, bailIdOrEmpty) {
+  const fileInput = document.getElementById('doc-upload-input');
+  const catSel = document.getElementById('doc-upload-cat');
+  const bailSel = document.getElementById('doc-upload-bail');
+  const descInput = document.getElementById('doc-upload-desc');
+  const resultEl = document.getElementById('doc-upload-result');
+  if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+    if (resultEl) resultEl.innerHTML = '<div class="alert" style="background:#fff3cd;border:1px solid #ffc107;padding:10px;border-radius:6px;">Sélectionnez au moins un fichier.</div>';
+    return;
+  }
+  const categorie = (catSel && catSel.value) || 'autre';
+  const bailId = bailIdOrEmpty || (bailSel && bailSel.value) || '';
+  const description = (descInput && descInput.value) || '';
+  if (resultEl) resultEl.innerHTML = '<div class="alert" style="background:#e3f2fd;border:1px solid #90caf9;padding:10px;border-radius:6px;">Envoi sur Google Drive en cours…</div>';
+  try {
+    const uploaded = await uploadDocumentsLocataire(locId, categorie, Array.from(fileInput.files), { bailId, description });
+    if (resultEl) resultEl.innerHTML = '<div class="alert alert-success">' + uploaded.length + ' fichier(s) uploadé(s) avec succès.</div>';
+    fileInput.value = '';
+    if (descInput) descInput.value = '';
+    openLocataireFiche(locId, false); // refresh
+  } catch (e) {
+    if (resultEl) resultEl.innerHTML = '<div class="alert" style="background:#fff3cd;border:1px solid #ffc107;padding:10px;border-radius:6px;">Erreur : ' + (e.message || e) + '</div>';
+  }
 }
 
 async function genererDocumentsDrive() {
