@@ -3347,7 +3347,8 @@ function ficheEnvoyerEmail(locId) {
       to: loc.email,
       sujet: remplirTemplate(tpl.sujet, vars),
       corps: remplirTemplate(tpl.corps, vars),
-      vars
+      vars,
+      bailId: bail.id, locId: loc.id
     });
   });
 
@@ -7998,7 +7999,8 @@ function ouvrirEnvoiEmail() {
       to: loc.email,
       sujet: remplirTemplate(tpl.sujet, vars),
       corps: remplirTemplate(tpl.corps, vars),
-      vars
+      vars,
+      bailId: bail.id, locId: loc.id
     });
   });
 
