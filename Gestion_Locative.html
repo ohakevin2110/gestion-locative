@@ -8767,11 +8767,62 @@ async function envoyerTousEmails() {
   btn.textContent = success + ' envoy\u00e9(s)' + (errors ? ', ' + errors + ' erreur(s)' : '') + ' \u2713';
   btn.style.background = errors ? 'var(--warning)' : 'var(--success)';
 
+  // Toast de confirmation
+  showEmailToast(success, errors);
+
+  // Rafraîchir la fiche locataire active pour afficher les nouvelles entrées d'historique
+  try {
+    const fiche = document.getElementById('page-locataire-detail');
+    if (fiche && fiche.classList.contains('active')) {
+      const m = (window.location.hash || '').match(/locataire-detail\/([^/]+)/);
+      const locId = m ? m[1] : null;
+      if (locId) openLocataireFiche(locId, false);
+    } else {
+      // Sinon refresh général si on est sur le dashboard/tableau
+      if (typeof refreshLight === 'function') refreshLight();
+    }
+  } catch(e) {}
+
+  // Reset du bouton
   setTimeout(() => {
     btn.disabled = false;
     btn.textContent = '\uD83D\uDCE8 Tout envoyer';
     btn.style.background = '#2B4A7E';
   }, 3000);
+
+  // Fermeture auto de la popup si tout est OK (délai pour laisser voir le ✓)
+  if (errors === 0 && success > 0) {
+    setTimeout(() => { fermerEmailModal(); }, 900);
+  }
+}
+
+// Toast de confirmation d'envoi
+function showEmailToast(success, errors) {
+  // Retire l'ancien toast s'il existe
+  const old = document.getElementById('email-toast');
+  if (old) old.remove();
+
+  const toast = document.createElement('div');
+  toast.id = 'email-toast';
+  const isOk = errors === 0 && success > 0;
+  const isWarn = errors > 0 && success > 0;
+  const bg = isOk ? 'linear-gradient(135deg,#00B894,#00CEC9)'
+           : isWarn ? 'linear-gradient(135deg,#f59e0b,#f97316)'
+           : 'linear-gradient(135deg,#e74c3c,#c0392b)';
+  const icon = isOk ? '\u2713' : (isWarn ? '\u26A0' : '\u2717');
+  const msg = success === 0 ? 'Aucun email envoy\u00e9 — ' + errors + ' erreur(s)'
+            : (errors === 0 ? success + ' email(s) envoy\u00e9(s) avec succ\u00e8s'
+                            : success + ' envoy\u00e9(s), ' + errors + ' erreur(s)');
+  toast.style.cssText = 'position:fixed;top:24px;right:24px;z-index:10000;background:' + bg + ';color:white;padding:14px 22px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.25);font-size:14px;font-weight:600;display:flex;gap:12px;align-items:center;min-width:280px;transform:translateX(120%);transition:transform 0.35s cubic-bezier(0.22,1,0.36,1);';
+  toast.innerHTML = '<span style="font-size:22px;">' + icon + '</span><span>' + msg + '</span>';
+  document.body.appendChild(toast);
+  // Animation d'entr\u00e9e
+  requestAnimationFrame(() => { toast.style.transform = 'translateX(0)'; });
+  // Auto-dismiss
+  setTimeout(() => {
+    toast.style.transform = 'translateX(120%)';
+    setTimeout(() => { if (toast.parentNode) toast.remove(); }, 400);
+  }, 3500);
 }
 
 // ── INIT ──
