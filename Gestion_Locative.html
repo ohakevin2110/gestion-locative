@@ -4665,10 +4665,19 @@ function openModal(type, editId) {
     }).join('');
     const trimDisplay = (perioLoyer === 'trimestrielle' || perioCharges === 'trimestrielle') ? '' : 'display:none;';
     const depotRecuChecked = eb.depotRecu ? 'checked' : '';
+    // depotRecuDate stockée en ISO (ex: 2026-04-15T10:00:00.000Z) → on extrait YYYY-MM-DD pour l'input type="date"
+    const depotRecuDateVal = (eb.depotRecuDate && /^\d{4}-\d{2}-\d{2}/.test(eb.depotRecuDate))
+      ? eb.depotRecuDate.slice(0,10)
+      : '';
+    const depotDateDisplay = eb.depotRecu ? '' : 'display:none;';
     const depotRecuSection = existingBail ? `
       <div class="form-row"><div class="form-group" style="flex-direction:row;align-items:center;gap:10px;">
-        <input type="checkbox" id="m-ba-depotrecu" ${depotRecuChecked} style="width:18px;height:18px;cursor:pointer;">
+        <input type="checkbox" id="m-ba-depotrecu" ${depotRecuChecked} onchange="toggleDepotDateVisibility()" style="width:18px;height:18px;cursor:pointer;">
         <label for="m-ba-depotrecu" style="margin:0;text-transform:none;letter-spacing:0;font-size:13px;cursor:pointer;color:var(--text);">Dépôt de garantie reçu du locataire</label>
+      </div>
+      <div class="form-group" id="m-ba-depotrecudate-group" style="${depotDateDisplay}">
+        <label>Date d'encaissement du dépôt</label>
+        <input type="date" id="m-ba-depotrecudate" value="${depotRecuDateVal}">
       </div></div>` : '';
     body.innerHTML = `
       <div class="form-row"><div class="form-group"><label>Bien (le propriétaire est déduit automatiquement)</label><select id="m-ba-bien" onchange="fillBailProprio()">${bienOpts}</select></div></div>
@@ -4700,6 +4709,22 @@ function toggleTrimestresVisibility() {
   const pc = gv('m-ba-periocharges');
   const grp = document.getElementById('m-ba-trimestres-group');
   if (grp) grp.style.display = (pl === 'trimestrielle' || pc === 'trimestrielle') ? '' : 'none';
+}
+
+// Affiche/masque le champ "Date d'encaissement du d\u00e9p\u00f4t" selon le statut de la checkbox DG re\u00e7u
+function toggleDepotDateVisibility() {
+  const cb = document.getElementById('m-ba-depotrecu');
+  const grp = document.getElementById('m-ba-depotrecudate-group');
+  if (!cb || !grp) return;
+  grp.style.display = cb.checked ? '' : 'none';
+  // Pr\u00e9-remplir avec aujourd'hui si on coche et que le champ est vide
+  if (cb.checked) {
+    const inp = document.getElementById('m-ba-depotrecudate');
+    if (inp && !inp.value) {
+      const t = new Date();
+      inp.value = t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0');
+    }
+  }
 }
 
 function closeModal() { document.getElementById('modal').classList.remove('show'); }
@@ -5285,11 +5310,27 @@ function updateBail(bailId) {
   // D\u00e9p\u00f4t re\u00e7u : checkbox pr\u00e9sente uniquement en mode \u00e9dition
   const depotRecuEl = document.getElementById('m-ba-depotrecu');
   const newDepotRecu = depotRecuEl ? !!depotRecuEl.checked : !!bail.depotRecu;
+  // Date d'encaissement du DG : champ saisi par l'utilisateur (YYYY-MM-DD), converti en ISO pour stockage coh\u00e9rent.
+  // Fallback : date existante du bail, sinon aujourd'hui.
+  const depotRecuDateEl = document.getElementById('m-ba-depotrecudate');
+  let newDepotRecuDate = '';
+  if (newDepotRecu) {
+    const saisi = depotRecuDateEl ? (depotRecuDateEl.value || '').trim() : '';
+    if (saisi && /^\d{4}-\d{2}-\d{2}$/.test(saisi)) {
+      // Stocker \u00e0 midi UTC pour \u00e9viter les d\u00e9calages de fuseau qui feraient sauter d'un mois
+      newDepotRecuDate = new Date(saisi + 'T12:00:00.000Z').toISOString();
+    } else {
+      newDepotRecuDate = bail.depotRecuDate || new Date().toISOString();
+    }
+  }
   // Log les changements principaux
   const changements = [];
   if (bail.loyer !== loyerMontant) changements.push('loyer ' + fmt(bail.loyer||0) + ' \u2192 ' + fmt(loyerMontant));
   if (bail.depot !== depotMontant) changements.push('d\u00e9p\u00f4t ' + fmt(bail.depot||0) + ' \u2192 ' + fmt(depotMontant));
   if (!!bail.depotRecu !== newDepotRecu) changements.push('d\u00e9p\u00f4t ' + (newDepotRecu ? 'marqu\u00e9 re\u00e7u' : 'd\u00e9-marqu\u00e9'));
+  if (newDepotRecu && (bail.depotRecuDate||'').slice(0,10) !== newDepotRecuDate.slice(0,10)) {
+    changements.push('date encaissement DG \u2192 ' + newDepotRecuDate.slice(0,10));
+  }
   if (bail.statut !== gv('m-ba-statut')) changements.push('statut ' + (bail.statut||'?') + ' \u2192 ' + gv('m-ba-statut'));
   // Applique les modifs
   Object.assign(bail, {
@@ -5302,7 +5343,7 @@ function updateBail(bailId) {
     depot: depotMontant, jourEcheance: jourEch,
     statut: gv('m-ba-statut'),
     depotRecu: newDepotRecu,
-    depotRecuDate: newDepotRecu ? (bail.depotRecuDate || new Date().toISOString()) : ''
+    depotRecuDate: newDepotRecuDate
   });
   const _loc = data.locataires.find(x=>x.id===bail.locId);
   const _bien = data.biens.find(x=>x.id===bail.bienId);
@@ -5546,17 +5587,78 @@ function genererDocuments() {
   if (count > 0) renderHistoriqueDocs();
 }
 
-function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverride, periodeLabel, returnBlob) {
+// Calcule automatiquement le prorata et le DG à afficher pour un (bail, moisNum, annee).
+// - proRataInfo : null si mois plein, sinon { joursActifs, joursDansMois, ratio, dateStart, dateEnd, motif }
+// - depotInfo   : null si DG non encaissé sur ce mois, sinon { montant }
+// Pour les baux à loyer trimestriel, le prorata n'est pas appliqué (cas rare géré manuellement).
+function getQuittanceExtras(bail, moisNum, annee) {
+  let proRataInfo = null;
+  let depotInfo = null;
+  if (!bail || annee == null) return { proRataInfo, depotInfo };
+
+  // Prorata (même logique que getMoisTotal)
+  const periLoyer = (typeof getPeriodiciteLoyer === 'function') ? getPeriodiciteLoyer(bail) : (bail.periodiciteLoyer || 'mensuelle');
+  if (periLoyer !== 'trimestrielle') {
+    const joursDansMois = new Date(annee, moisNum, 0).getDate();
+    const firstOfMonth = new Date(annee, moisNum - 1, 1);
+    const lastOfMonth = new Date(annee, moisNum, 0, 23, 59, 59, 999);
+    let activeStart = firstOfMonth;
+    let activeEnd = lastOfMonth;
+    let motif = null;
+    const d = bail.debut ? new Date(bail.debut) : null;
+    const f = bail.fin ? new Date(bail.fin) : null;
+    if (d && !isNaN(d.getTime()) && d > firstOfMonth) { activeStart = d; motif = 'entree'; }
+    if (f && !isNaN(f.getTime()) && f < lastOfMonth) { activeEnd = f; motif = motif ? 'entree+sortie' : 'sortie'; }
+    if (activeStart <= activeEnd) {
+      const startMs = new Date(activeStart.getFullYear(), activeStart.getMonth(), activeStart.getDate()).getTime();
+      const endMs   = new Date(activeEnd.getFullYear(),   activeEnd.getMonth(),   activeEnd.getDate()).getTime();
+      const joursActifs = Math.floor((endMs - startMs) / 86400000) + 1;
+      if (joursActifs > 0 && joursActifs < joursDansMois) {
+        proRataInfo = {
+          joursActifs, joursDansMois,
+          ratio: joursActifs / joursDansMois,
+          dateStart: new Date(activeStart),
+          dateEnd: new Date(activeEnd),
+          motif: motif || 'entree'
+        };
+      }
+    }
+  }
+
+  // Dépôt de garantie : afficher si encaissé sur ce mois/année
+  if (bail.depotRecu && bail.depotRecuDate && (bail.depot || 0) > 0) {
+    const dg = new Date(bail.depotRecuDate);
+    if (!isNaN(dg.getTime()) && (dg.getMonth() + 1) === moisNum && dg.getFullYear() === Number(annee)) {
+      depotInfo = { montant: bail.depot };
+    }
+  }
+
+  return { proRataInfo, depotInfo };
+}
+
+function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverride, periodeLabel, returnBlob, extrasOverride) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF('p','mm','a4');
   const w=210;
   const h=297;
   const loc = data.locataires.find(x=>x.id===bail.locId)||{};
   const bien = data.biens.find(x=>x.id===bail.bienId)||{};
-  const loyer=loyerOverride!=null?loyerOverride:(bail.loyer||0), charges=chargesMois!=null?chargesMois:(bail.charges||0), total=loyer+charges;
+  const loyerBase = loyerOverride!=null?loyerOverride:(bail.loyer||0);
+  const chargesBase = chargesMois!=null?chargesMois:(bail.charges||0);
   const locNom = `${loc.civilite||''} ${loc.prenom||''} ${loc.nom||''}`.trim();
   const jour = bail.jourEcheance||1;
   const moisNum = MOIS_NUM[mois]||1;
+
+  // ── Prorata + DG (auto par défaut, override possible) ──
+  const _extras = extrasOverride || getQuittanceExtras(bail, moisNum, Number(annee));
+  const _pr = _extras.proRataInfo;
+  const _dg = _extras.depotInfo;
+  // On n'applique le prorata que si l'appelant n'a pas surchargé loyer/charges (sinon risque de double prorata)
+  const _appliquerProrata = _pr && loyerOverride == null && chargesMois == null;
+  const loyer   = _appliquerProrata ? Math.round(loyerBase   * _pr.ratio * 100) / 100 : loyerBase;
+  const charges = _appliquerProrata ? Math.round(chargesBase * _pr.ratio * 100) / 100 : chargesBase;
+  const dgMontant = _dg ? _dg.montant : 0;
+  const total = loyer + charges + dgMontant;
 
   // Header
   doc.setFillColor(44,62,80); doc.rect(0,0,w,28,'F');
@@ -5617,6 +5719,19 @@ function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverri
   doc.text('D\u00c9TAIL DU PAIEMENT',w/2,y+6,{align:'center'});
   y+=14;
 
+  // Bandeau prorata (mois d'entr\u00e9e ou de sortie)
+  if (_appliquerProrata) {
+    const _fmtJ = (dt) => String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear();
+    const _libProrata = (_pr.motif === 'sortie' ? 'Prorata sortie' : 'Prorata d\'entr\u00e9e')
+      + ' \u2014 du '+_fmtJ(_pr.dateStart)+' au '+_fmtJ(_pr.dateEnd)
+      + ' ('+_pr.joursActifs+'/'+_pr.joursDansMois+' jours)';
+    doc.setFillColor(255,243,205); doc.rect(15,y,180,9,'F');
+    doc.setDrawColor(245,158,11); doc.rect(15,y,180,9,'S');
+    doc.setTextColor(133,77,14); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+    doc.text(_libProrata, w/2, y+6, {align:'center'});
+    y+=13;
+  }
+
   doc.setFillColor(44,62,80); doc.rect(25,y,160,8,'F');
   doc.setTextColor(255); doc.setFontSize(9); doc.setFont('helvetica','bold');
   doc.text('D\u00e9signation',30,y+6); doc.text('Montant',170,y+6,{align:'right'});
@@ -5624,11 +5739,23 @@ function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverri
 
   const isTrimQ = periodeLabel==='trimestrielle';
   doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
-  doc.text(isTrimQ?'Loyer trimestriel hors charges (3 mois)':'Loyer hors charges',30,y+5); doc.text(fmt(loyer),170,y+5,{align:'right'});
+  const _libLoyer = isTrimQ
+    ? 'Loyer trimestriel hors charges (3 mois)'
+    : (_appliquerProrata ? 'Prorata loyer hors charges ('+_pr.joursActifs+'/'+_pr.joursDansMois+' j)' : 'Loyer hors charges');
+  doc.text(_libLoyer,30,y+5); doc.text(fmt(loyer),170,y+5,{align:'right'});
   doc.setDrawColor(220,220,220); doc.line(25,y+8,185,y+8); y+=10;
-  const chargeLabel = isTrimQ?'Charges trimestrielles':(bail.periodiciteCharges==='annuelle'?'Charges annuelles':'Provision pour charges');
+  const _libChargesBase = isTrimQ?'Charges trimestrielles':(bail.periodiciteCharges==='annuelle'?'Charges annuelles':'Provision pour charges');
+  const chargeLabel = (_appliquerProrata && !isTrimQ ? 'Prorata '+_libChargesBase.toLowerCase()+' ('+_pr.joursActifs+'/'+_pr.joursDansMois+' j)' : _libChargesBase);
   doc.text(chargeLabel+(charges===0?' (non applicable)':''),30,y+5); doc.text(fmt(charges),170,y+5,{align:'right'});
-  doc.line(25,y+8,185,y+8); y+=14;
+  doc.line(25,y+8,185,y+8); y+=10;
+
+  // Ligne d\u00e9p\u00f4t de garantie (si encaiss\u00e9 sur ce mois)
+  if (_dg) {
+    doc.text('D\u00e9p\u00f4t de garantie',30,y+5);
+    doc.text(fmt(dgMontant),170,y+5,{align:'right'});
+    doc.line(25,y+8,185,y+8); y+=10;
+  }
+  y+=4;
 
   doc.setFillColor(235,245,251); doc.rect(25,y,160,10,'F');
   doc.setDrawColor(44,62,80); doc.line(25,y,185,y);
@@ -5643,7 +5770,14 @@ function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverri
 
   y+=8; doc.setDrawColor(189,195,199); doc.line(20,y,190,y); y+=6;
   doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(100);
-  const legal = `Le bailleur, ${P.nom||'___'}, d\u00e9clare avoir re\u00e7u de ${locNom} la somme de ${fmt(total)} au titre du paiement du loyer et des charges pour la p\u00e9riode de ${periode}.`;
+  const _fmtJ2 = (dt) => String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear();
+  const _periodeLegal = _appliquerProrata
+    ? `la p\u00e9riode du ${_fmtJ2(_pr.dateStart)} au ${_fmtJ2(_pr.dateEnd)} (${_pr.joursActifs}/${_pr.joursDansMois} jours)`
+    : `la p\u00e9riode de ${periode}`;
+  const _objetLegal = (dgMontant > 0)
+    ? 'du loyer, des charges et du d\u00e9p\u00f4t de garantie'
+    : 'du loyer et des charges';
+  const legal = `Le bailleur, ${P.nom||'___'}, d\u00e9clare avoir re\u00e7u de ${locNom} la somme de ${fmt(total)} au titre du paiement ${_objetLegal} pour ${_periodeLegal}.`;
   const lines = doc.splitTextToSize(legal,145);
   doc.text(lines,30,y); y+=lines.length*3.5+2;
   const leg2 = doc.splitTextToSize('Cette quittance annule tous les re\u00e7us qui auraient pu \u00eatre d\u00e9livr\u00e9s pour acomptes vers\u00e9s au titre de cette m\u00eame p\u00e9riode. Elle est d\u00e9livr\u00e9e sous r\u00e9serve de tous droits, actions et proc\u00e9dures du bailleur.',145);
@@ -5778,7 +5912,7 @@ function genAvisPDF(bail, P, periode, mois, annee, chargesMois, loyerOverride, p
   doc.save(_aFilename);
 }
 
-function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye, nextMoisNom, nextAnnee, nextMoisNum, aCharges, loyerAppele, periodeLabel, returnBlob) {
+function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye, nextMoisNom, nextAnnee, nextMoisNum, aCharges, loyerAppele, periodeLabel, returnBlob, extrasOverride) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF('p','mm','a4');
   const w=210, h=297;
@@ -5786,7 +5920,20 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   const bien = data.biens.find(x=>x.id===bail.bienId)||{};
   const locNom = `${loc.civilite||''} ${loc.prenom||''} ${loc.nom||''}`.trim();
   const isTrimC = periodeLabel==='trimestrielle';
-  const qTotal = qLoyer + qCharges;
+  // Page 1 (quittance) : prorata + DG sur le mois précédent
+  // Page 2 (avis) : INCHANGÉ — loyer plein du bail, jamais de prorata ni DG
+  const _qExtras = extrasOverride || getQuittanceExtras(bail, moisNum, Number(annee));
+  const _qPr = _qExtras.proRataInfo;
+  const _qDg = _qExtras.depotInfo;
+  // qLoyer/qCharges sont passés par le call site (déjà = bail.loyer si prevPaye, sinon 0).
+  // On applique le prorata seulement si le paiement a bien été fait (sinon on reste à 0).
+  const _qApplyProrata = _qPr && prevPaye;
+  if (_qApplyProrata) {
+    qLoyer = Math.round(qLoyer * _qPr.ratio * 100) / 100;
+    qCharges = Math.round(qCharges * _qPr.ratio * 100) / 100;
+  }
+  const qDgMontant = (_qDg && prevPaye) ? _qDg.montant : 0;
+  const qTotal = qLoyer + qCharges + qDgMontant;
   const aLoyer = loyerAppele || (bail.loyer||0);
   const aTotal = aLoyer + aCharges;
   const jour = bail.jourEcheance||1;
@@ -5869,17 +6016,41 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   doc.text('D\u00c9TAIL DU PAIEMENT',w/2,y+6,{align:'center'});
   y+=14;
 
+  // Bandeau prorata si applicable
+  if (_qApplyProrata) {
+    const _fmtJC = (dt) => String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear();
+    const _libProrataC = (_qPr.motif === 'sortie' ? 'Prorata sortie' : 'Prorata d\'entr\u00e9e')
+      + ' \u2014 du '+_fmtJC(_qPr.dateStart)+' au '+_fmtJC(_qPr.dateEnd)
+      + ' ('+_qPr.joursActifs+'/'+_qPr.joursDansMois+' jours)';
+    doc.setFillColor(255,243,205); doc.rect(15,y,180,9,'F');
+    doc.setDrawColor(245,158,11); doc.rect(15,y,180,9,'S');
+    doc.setTextColor(133,77,14); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+    doc.text(_libProrataC, w/2, y+6, {align:'center'});
+    y+=13;
+  }
+
   doc.setFillColor(44,62,80); doc.rect(25,y,160,8,'F');
   doc.setTextColor(255); doc.setFontSize(9); doc.setFont('helvetica','bold');
   doc.text('D\u00e9signation',30,y+6); doc.text('Montant',170,y+6,{align:'right'});
   y+=10;
 
   doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
-  doc.text(isTrimC?'Loyer trimestriel hors charges (3 mois)':'Loyer hors charges',30,y+5); doc.text(fmt(qLoyer),170,y+5,{align:'right'});
+  const _libLoyerC = isTrimC
+    ? 'Loyer trimestriel hors charges (3 mois)'
+    : (_qApplyProrata ? 'Prorata loyer hors charges ('+_qPr.joursActifs+'/'+_qPr.joursDansMois+' j)' : 'Loyer hors charges');
+  doc.text(_libLoyerC,30,y+5); doc.text(fmt(qLoyer),170,y+5,{align:'right'});
   doc.setDrawColor(220,220,220); doc.line(25,y+8,185,y+8); y+=10;
-  const chargeLabelC = isTrimC?'Charges trimestrielles':'Provision pour charges';
+  const _libChargesBaseC = isTrimC?'Charges trimestrielles':'Provision pour charges';
+  const chargeLabelC = (_qApplyProrata && !isTrimC ? 'Prorata '+_libChargesBaseC.toLowerCase()+' ('+_qPr.joursActifs+'/'+_qPr.joursDansMois+' j)' : _libChargesBaseC);
   doc.text(chargeLabelC+(qCharges===0?' (non applicable)':''),30,y+5); doc.text(fmt(qCharges),170,y+5,{align:'right'});
-  doc.line(25,y+8,185,y+8); y+=14;
+  doc.line(25,y+8,185,y+8); y+=10;
+
+  if (qDgMontant > 0) {
+    doc.text('D\u00e9p\u00f4t de garantie',30,y+5);
+    doc.text(fmt(qDgMontant),170,y+5,{align:'right'});
+    doc.line(25,y+8,185,y+8); y+=10;
+  }
+  y+=4;
 
   doc.setFillColor(235,245,251); doc.rect(25,y,160,10,'F');
   doc.setDrawColor(44,62,80); doc.line(25,y,185,y);
@@ -5894,7 +6065,14 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
 
   y+=8; doc.setDrawColor(189,195,199); doc.line(20,y,190,y); y+=6;
   doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(100);
-  const legal = `Le bailleur, ${P.nom||'___'}, d\u00e9clare avoir re\u00e7u de ${locNom} la somme de ${fmt(qTotal)} au titre du paiement du loyer et des charges pour la p\u00e9riode de ${periode}.`;
+  const _fmtJ2C = (dt) => String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear();
+  const _periodeLegalC = _qApplyProrata
+    ? `la p\u00e9riode du ${_fmtJ2C(_qPr.dateStart)} au ${_fmtJ2C(_qPr.dateEnd)} (${_qPr.joursActifs}/${_qPr.joursDansMois} jours)`
+    : `la p\u00e9riode de ${periode}`;
+  const _objetLegalC = (qDgMontant > 0)
+    ? 'du loyer, des charges et du d\u00e9p\u00f4t de garantie'
+    : 'du loyer et des charges';
+  const legal = `Le bailleur, ${P.nom||'___'}, d\u00e9clare avoir re\u00e7u de ${locNom} la somme de ${fmt(qTotal)} au titre du paiement ${_objetLegalC} pour ${_periodeLegalC}.`;
   const lines = doc.splitTextToSize(legal,145);
   doc.text(lines,30,y); y+=lines.length*3.5+2;
   const leg2 = doc.splitTextToSize('Cette quittance annule tous les re\u00e7us qui auraient pu \u00eatre d\u00e9livr\u00e9s pour acomptes vers\u00e9s au titre de cette m\u00eame p\u00e9riode. Elle est d\u00e9livr\u00e9e sous r\u00e9serve de tous droits, actions et proc\u00e9dures du bailleur.',145);
