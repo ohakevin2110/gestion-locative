@@ -1293,10 +1293,11 @@ window.addEventListener('storage', (ev) => {
   } catch(e) {}
 });
 function logActivity(opts) {
-  // opts: { type, proprioId, locataireId, bailId, bienId, details }
+  // opts: { type, proprioId, locataireId, bailId, bienId, details, payload? }
+  // payload : objet libre stocké tel quel (utilisé pour les emails : { subject, body, to, cc, attachmentName })
   if (!data.historique) data.historique = [];
-  data.historique.push({
-    id: 'H' + Date.now(),
+  const entry = {
+    id: 'H' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
     date: new Date().toISOString(),
     type: opts.type || '',
     proprioId: opts.proprioId || '',
@@ -1304,7 +1305,11 @@ function logActivity(opts) {
     bailId: opts.bailId || '',
     bienId: opts.bienId || '',
     details: opts.details || ''
-  });
+  };
+  if (opts.payload && typeof opts.payload === 'object') {
+    entry.payload = opts.payload;
+  }
+  data.historique.push(entry);
   // Keep max 500 entries
   if (data.historique.length > 500) {
     // #16 Avertissement discret (1 fois par session) quand on atteint la limite
@@ -1314,6 +1319,47 @@ function logActivity(opts) {
     }
     data.historique = data.historique.slice(-500);
   }
+}
+
+// Aperçu d'un email envoyé depuis une entrée d'historique (h.payload présent).
+// Ouvre une modal lecture seule avec sujet, destinataire, CC, corps, et nom du PDF joint.
+function showEmailPreview(historiqueId) {
+  const entry = (data.historique || []).find(h => h.id === historiqueId);
+  if (!entry) { alert("Entrée d'historique introuvable."); return; }
+  if (!entry.payload || entry.type !== 'email') {
+    alert("Cet email a été envoyé avant l'ajout de l'aperçu et son contenu n'a pas été conservé.");
+    return;
+  }
+  const p = entry.payload;
+  const dt = new Date(entry.date);
+  const dateStr = dt.toLocaleDateString('fr-FR') + ' à ' + dt.toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'});
+  const _esc = (s) => (s == null ? '' : String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const ccLine = p.cc ? `<div style="font-size:13px;color:var(--text);margin-bottom:6px;"><strong style="color:var(--text-light);">CC :</strong> ${_esc(p.cc)}</div>` : '';
+  const attachLine = p.attachmentName ? `<div style="font-size:13px;color:var(--text);margin-bottom:6px;"><strong style="color:var(--text-light);">Pièce jointe :</strong> 📎 ${_esc(p.attachmentName)}</div>` : '';
+  const testBadge = p.testMode ? '<span style="display:inline-block;background:rgba(245,158,11,0.15);color:var(--warning);font-weight:600;font-size:11px;padding:2px 8px;border-radius:6px;margin-left:8px;">🧪 Mode test</span>' : '';
+  const kindLabel = p.kind === 'relance' ? 'Relance' : (p.kind === 'quittance' ? 'Quittance' : (p.kind === 'avis' ? "Avis d'échéance" : (p.kind === 'combine' ? 'Quittance + Avis' : 'Email')));
+  const html = `
+    <div class="card">
+      <div class="card-header" style="background:linear-gradient(135deg,#2B4A7E,#3B5998);">
+        <h3 style="color:white;font-size:16px;">✉️ ${_esc(kindLabel)} envoyé${testBadge}</h3>
+      </div>
+      <div class="card-body">
+        <div style="font-size:11px;color:var(--text-light);margin-bottom:12px;">${_esc(dateStr)}</div>
+        <div style="font-size:13px;color:var(--text);margin-bottom:6px;"><strong style="color:var(--text-light);">À :</strong> ${_esc(p.to || '')}</div>
+        ${ccLine}
+        <div style="font-size:14px;font-weight:600;color:var(--primary);margin:12px 0 6px 0;padding:8px 12px;background:var(--light-bg);border-left:3px solid var(--accent);border-radius:4px;">${_esc(p.subject || '(sans sujet)')}</div>
+        ${attachLine}
+        <div style="margin-top:14px;padding:14px;background:#f8f9fa;border:1px solid var(--border);border-radius:6px;font-family:'Helvetica Neue',Arial,sans-serif;font-size:13px;line-height:1.5;color:var(--text);white-space:pre-wrap;word-wrap:break-word;max-height:50vh;overflow-y:auto;">${_esc(p.body || '(corps vide)')}</div>
+      </div>
+    </div>`;
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1100;display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.onclick = function(e) { if (e.target === modal) document.body.removeChild(modal); };
+  const inner = document.createElement('div');
+  inner.style.cssText = 'background:var(--white);border-radius:16px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 25px 50px rgba(0,0,0,0.3);';
+  inner.innerHTML = html + '<div style="padding:16px;text-align:right;"><button class="btn btn-sm" style="background:var(--border);color:var(--text);" onclick="this.closest(\'div[style*=fixed]\').remove()">Fermer</button></div>';
+  modal.appendChild(inner);
+  document.body.appendChild(modal);
 }
 
 // Historique structuré des documents générés (pour re-téléchargement)
@@ -3164,10 +3210,15 @@ function openLocataireFiche(locId, pushStateFlag) {
       else if (h.type === 'email') { icon = '✉️'; color = '#2B4A7E'; }
       else if (h.type === 'document') { icon = '📄'; color = '#e17055'; }
       else if (h.type === 'bail') { icon = '📝'; color = '#00b894'; }
-      html += `<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);">
+      const _isClickEmail = h.type === 'email' && h.payload;
+      const _rowAttr = _isClickEmail
+        ? ` onclick="showEmailPreview('${escapeHtml(h.id)}')" title="Cliquer pour voir le contenu de l'email" style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;border-radius:6px;transition:background 0.15s;" onmouseover="this.style.background='rgba(43,74,126,0.06)'" onmouseout="this.style.background=''"`
+        : ` style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);"`;
+      const _eyeHint = _isClickEmail ? ' <span style="font-size:11px;color:var(--text-light);font-weight:400;">👁 voir</span>' : '';
+      html += `<div${_rowAttr}>
         <span style="font-size:20px;flex-shrink:0;">${icon}</span>
         <div style="flex:1;min-width:0;">
-          <div style="font-size:13px;font-weight:600;color:${color};">${h.details || h.type}</div>
+          <div style="font-size:13px;font-weight:600;color:${color};">${h.details || h.type}${_eyeHint}</div>
           <div style="font-size:11px;color:var(--text-light);margin-top:2px;">${dateStr}</div>
         </div>
       </div>`;
@@ -3396,7 +3447,12 @@ function openProprioHistorique(proprioId) {
       else if (h.type === 'email') { icon = '✉️'; color = '#2B4A7E'; }
       else if (h.type === 'document') { icon = '📄'; color = '#e17055'; }
       else if (h.type === 'bail') { icon = '📝'; color = '#00b894'; }
-      html += '<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);"><span style="font-size:20px;flex-shrink:0;">' + icon + '</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:' + color + ';">' + (h.details || h.type) + '</div><div style="font-size:11px;color:var(--text-light);margin-top:2px;">' + dateStr + '</div></div></div>';
+      const _isClickEmailP = h.type === 'email' && h.payload;
+      const _rowAttrP = _isClickEmailP
+        ? ' onclick="showEmailPreview(\'' + escapeHtml(h.id) + '\')" title="Cliquer pour voir le contenu de l\'email" style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;border-radius:6px;transition:background 0.15s;" onmouseover="this.style.background=\'rgba(43,74,126,0.06)\'" onmouseout="this.style.background=\'\'"'
+        : ' style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);"';
+      const _eyeHintP = _isClickEmailP ? ' <span style="font-size:11px;color:var(--text-light);font-weight:400;">👁 voir</span>' : '';
+      html += '<div' + _rowAttrP + '><span style="font-size:20px;flex-shrink:0;">' + icon + '</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:' + color + ';">' + (h.details || h.type) + _eyeHintP + '</div><div style="font-size:11px;color:var(--text-light);margin-top:2px;">' + dateStr + '</div></div></div>';
     });
     html += '</div>';
   }
@@ -5591,6 +5647,47 @@ function genererDocuments() {
 // - proRataInfo : null si mois plein, sinon { joursActifs, joursDansMois, ratio, dateStart, dateEnd, motif }
 // - depotInfo   : null si DG non encaissé sur ce mois, sinon { montant }
 // Pour les baux à loyer trimestriel, le prorata n'est pas appliqué (cas rare géré manuellement).
+// Formate une période en français : "du 1er au 31 janvier 2026", "du 15 au 31 janvier 2026",
+// "du 1er janvier au 31 mars 2026" (trim), ou "du 1er décembre 2025 au 28 février 2026" (cross-year).
+// Convention française : jour 1 → "1er", autres jours sans zéro padding.
+function formatPeriodeFr(dateDebut, dateFin) {
+  const moisNoms = ['','janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  const fmtJour = (j) => j === 1 ? '1er' : String(j);
+  const jD = dateDebut.getDate(), mD = dateDebut.getMonth() + 1, aD = dateDebut.getFullYear();
+  const jF = dateFin.getDate(),   mF = dateFin.getMonth() + 1,   aF = dateFin.getFullYear();
+  if (mD === mF && aD === aF) {
+    return `du ${fmtJour(jD)} au ${fmtJour(jF)} ${moisNoms[mD]} ${aD}`;
+  }
+  if (aD === aF) {
+    return `du ${fmtJour(jD)} ${moisNoms[mD]} au ${fmtJour(jF)} ${moisNoms[mF]} ${aD}`;
+  }
+  return `du ${fmtJour(jD)} ${moisNoms[mD]} ${aD} au ${fmtJour(jF)} ${moisNoms[mF]} ${aF}`;
+}
+
+// Calcule {dateDebut, dateFin} pour une quittance/avis donnés.
+// - Trimestriel : du 1er du moisNum au dernier jour de (moisNum+2) — convention "à échoir".
+// - Mensuel avec prorata (entrée/sortie en cours de mois) : dates exactes du prorata.
+// - Mensuel standard : 1er du mois → dernier jour du mois.
+function getPeriodeDates(moisNum, annee, periodeLabel, extras) {
+  const an = Number(annee);
+  const isTrim = periodeLabel === 'trimestrielle';
+  if (isTrim) {
+    const finMoisNum = moisNum + 2;
+    const dateDebut = new Date(an, moisNum - 1, 1);
+    const finAn = finMoisNum > 12 ? an + 1 : an;
+    const finMois = finMoisNum > 12 ? finMoisNum - 12 : finMoisNum;
+    const dateFin = new Date(finAn, finMois, 0); // dernier jour du mois (jour 0 du mois suivant)
+    return { dateDebut, dateFin };
+  }
+  const pr = extras && extras.proRataInfo;
+  if (pr) {
+    return { dateDebut: new Date(pr.dateStart), dateFin: new Date(pr.dateEnd) };
+  }
+  const dateDebut = new Date(an, moisNum - 1, 1);
+  const dateFin = new Date(an, moisNum, 0);
+  return { dateDebut, dateFin };
+}
+
 function getQuittanceExtras(bail, moisNum, annee) {
   let proRataInfo = null;
   let depotInfo = null;
@@ -5665,7 +5762,8 @@ function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverri
   doc.setTextColor(255); doc.setFontSize(20); doc.setFont('helvetica','bold');
   doc.text('QUITTANCE DE LOYER',w/2,14,{align:'center'});
   doc.setFontSize(10); doc.setFont('helvetica','normal');
-  doc.text('P\u00e9riode : '+periode,w/2,23,{align:'center'});
+  const _periodeQ = (function(){ const pd = getPeriodeDates(moisNum, annee, periodeLabel, _extras); return formatPeriodeFr(pd.dateDebut, pd.dateFin); })();
+  doc.text('P\u00e9riode : '+_periodeQ,w/2,23,{align:'center'});
 
   let y=36;
 
@@ -5770,10 +5868,9 @@ function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverri
 
   y+=8; doc.setDrawColor(189,195,199); doc.line(20,y,190,y); y+=6;
   doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(100);
-  const _fmtJ2 = (dt) => String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear();
   const _periodeLegal = _appliquerProrata
-    ? `la p\u00e9riode du ${_fmtJ2(_pr.dateStart)} au ${_fmtJ2(_pr.dateEnd)} (${_pr.joursActifs}/${_pr.joursDansMois} jours)`
-    : `la p\u00e9riode de ${periode}`;
+    ? `la p\u00e9riode ${_periodeQ} (${_pr.joursActifs}/${_pr.joursDansMois} jours)`
+    : `la p\u00e9riode ${_periodeQ}`;
   const _objetLegal = (dgMontant > 0)
     ? 'du loyer, des charges et du d\u00e9p\u00f4t de garantie'
     : 'du loyer et des charges';
@@ -5815,7 +5912,8 @@ function genAvisPDF(bail, P, periode, mois, annee, chargesMois, loyerOverride, p
   doc.setTextColor(255); doc.setFontSize(20); doc.setFont('helvetica','bold');
   doc.text("AVIS D'\u00c9CH\u00c9ANCE",w/2,14,{align:'center'});
   doc.setFontSize(10); doc.setFont('helvetica','normal');
-  doc.text('P\u00e9riode : '+periode,w/2,23,{align:'center'});
+  const _periodeA = (function(){ const pd = getPeriodeDates(moisNum, annee, periodeLabel, null); return formatPeriodeFr(pd.dateDebut, pd.dateFin); })();
+  doc.text('P\u00e9riode : '+_periodeA,w/2,23,{align:'center'});
 
   let y=36;
 
@@ -5944,7 +6042,8 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   doc.setTextColor(255); doc.setFontSize(20); doc.setFont('helvetica','bold');
   doc.text('QUITTANCE DE LOYER',w/2,14,{align:'center'});
   doc.setFontSize(10); doc.setFont('helvetica','normal');
-  doc.text('P\u00e9riode : '+periode,w/2,23,{align:'center'});
+  const _periodeC1 = (function(){ const pd = getPeriodeDates(moisNum, annee, periodeLabel, _qExtras); return formatPeriodeFr(pd.dateDebut, pd.dateFin); })();
+  doc.text('P\u00e9riode : '+_periodeC1,w/2,23,{align:'center'});
 
   let y=36;
 
@@ -6065,10 +6164,9 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
 
   y+=8; doc.setDrawColor(189,195,199); doc.line(20,y,190,y); y+=6;
   doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(100);
-  const _fmtJ2C = (dt) => String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear();
   const _periodeLegalC = _qApplyProrata
-    ? `la p\u00e9riode du ${_fmtJ2C(_qPr.dateStart)} au ${_fmtJ2C(_qPr.dateEnd)} (${_qPr.joursActifs}/${_qPr.joursDansMois} jours)`
-    : `la p\u00e9riode de ${periode}`;
+    ? `la p\u00e9riode ${_periodeC1} (${_qPr.joursActifs}/${_qPr.joursDansMois} jours)`
+    : `la p\u00e9riode ${_periodeC1}`;
   const _objetLegalC = (qDgMontant > 0)
     ? 'du loyer, des charges et du d\u00e9p\u00f4t de garantie'
     : 'du loyer et des charges';
@@ -6090,12 +6188,13 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   // ═══ PAGE 2 : AVIS D'\u00c9CH\u00c9ANCE (mois suivant) ═══
   doc.addPage();
   const nextPeriode = nextMoisNom+' '+nextAnnee;
+  const _periodeC2 = (function(){ const pd = getPeriodeDates(nextMoisNum, nextAnnee, periodeLabel, null); return formatPeriodeFr(pd.dateDebut, pd.dateFin); })();
 
   doc.setFillColor(231,76,60); doc.rect(0,0,w,28,'F');
   doc.setTextColor(255); doc.setFontSize(20); doc.setFont('helvetica','bold');
   doc.text("AVIS D'\u00c9CH\u00c9ANCE",w/2,14,{align:'center'});
   doc.setFontSize(10); doc.setFont('helvetica','normal');
-  doc.text('P\u00e9riode : '+nextPeriode,w/2,23,{align:'center'});
+  doc.text('P\u00e9riode : '+_periodeC2,w/2,23,{align:'center'});
 
   y=36;
 
@@ -6246,7 +6345,8 @@ function genEntreePDF(bail, P, returnBlob) {
   doc.setTextColor(255); doc.setFontSize(20); doc.setFont('helvetica','bold');
   doc.text("D\u00c9COMPTE D'ENTR\u00c9E",w/2,14,{align:'center'});
   doc.setFontSize(10); doc.setFont('helvetica','normal');
-  doc.text("Entr\u00e9e dans les lieux : "+String(jourEntree).padStart(2,'0')+'/'+String(moisEntree).padStart(2,'0')+'/'+anneeEntree,w/2,23,{align:'center'});
+  const _periodeE = formatPeriodeFr(new Date(anneeEntree, moisEntree - 1, jourEntree), new Date(anneeEntree, moisEntree - 1, joursDansMois));
+  doc.text('P\u00e9riode : '+_periodeE,w/2,23,{align:'center'});
 
   let y=36;
 
@@ -8986,7 +9086,23 @@ async function envoyerUnEmail(idx) {
     const _eqLoc = data.locataires.find(x=>x.id===eq.locId);
     const _eqBien = _eqBail ? data.biens.find(x=>x.id===_eqBail.bienId) : null;
     const _relanceTag = eq.type === 'relance' ? ' [Relance]' : '';
-    logActivity({ type: 'email', proprioId: _eqBail?.proprioId||'', locataireId: eq.locId||'', bailId: eq.bailId||'', bienId: _eqBail?.bienId||'', details: 'Email' + _relanceTag + ' envoyé à ' + to + (_eqBien?' ('+_eqBien.designation+')':'') + (_eqLoc?' - '+((_eqLoc.prenom||'')+' '+_eqLoc.nom).trim():'') });
+    logActivity({
+      type: 'email',
+      proprioId: _eqBail?.proprioId||'',
+      locataireId: eq.locId||'',
+      bailId: eq.bailId||'',
+      bienId: _eqBail?.bienId||'',
+      details: 'Email' + _relanceTag + ' envoyé à ' + to + (_eqBien?' ('+_eqBien.designation+')':'') + (_eqLoc?' - '+((_eqLoc.prenom||'')+' '+_eqLoc.nom).trim():''),
+      payload: {
+        kind: eq.type === 'relance' ? 'relance' : (eq.type || 'email'),
+        to: to,
+        cc: ccVal || '',
+        subject: sujet,
+        body: corps,
+        attachmentName: pdfFilename || '',
+        testMode: !!window._emailTestMode
+      }
+    });
     // Auto-archive du PDF envoy\u00e9 sur Drive (fire-and-forget). Skip si pas de PDF (relance group\u00e9e texte).
     if (pdfBlob && _eqBail) {
       try { autoArchiveToDrive(pdfBlob, pdfFilename, _eqBail, eq.annee, eq.type); } catch(e) {}
