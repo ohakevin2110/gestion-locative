@@ -5757,8 +5757,8 @@ function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverri
   const dgMontant = _dg ? _dg.montant : 0;
   const total = loyer + charges + dgMontant;
 
-  // Header
-  doc.setFillColor(44,62,80); doc.rect(0,0,w,28,'F');
+  // \u2500\u2500 Header (option B : bleu nuit notaire) \u2500\u2500
+  doc.setFillColor(27,42,78); doc.rect(0,0,w,28,'F');
   doc.setTextColor(255); doc.setFontSize(20); doc.setFont('helvetica','bold');
   doc.text('QUITTANCE DE LOYER',w/2,14,{align:'center'});
   doc.setFontSize(10); doc.setFont('helvetica','normal');
@@ -5767,36 +5767,36 @@ function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverri
 
   let y=36;
 
-  // Bailleur
-  doc.setFillColor(52,152,219); doc.rect(15,y,85,7,'F');
-  doc.setTextColor(255); doc.setFontSize(9); doc.setFont('helvetica','bold');
+  // \u2500\u2500 Bailleur (bandeau gris clair, texte bleu nuit) \u2500\u2500
+  doc.setFillColor(244,245,247); doc.rect(15,y,85,7,'F');
+  doc.setTextColor(27,42,78); doc.setFontSize(9); doc.setFont('helvetica','bold');
   doc.text('BAILLEUR',18,y+5);
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text(P.nom||'[ \u00C0 compl\u00e9ter ]',18,y+14);
-  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(107,118,137);
   let by=y+19;
   if(P.adresse){doc.text(P.adresse,18,by);by+=4;}
   if(P.cp||P.ville){doc.text(`${P.cp||''} ${P.ville||''}`,18,by);by+=4;}
   if(P.siret){doc.text('SIRET : '+P.siret,18,by);by+=4;}
   if(P.type&&P.type!=='Personnel'){doc.text('Forme : '+P.type,18,by);}
 
-  // Locataire
-  doc.setFillColor(52,152,219); doc.rect(110,y,85,7,'F');
-  doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  // \u2500\u2500 Locataire \u2500\u2500
+  doc.setFillColor(244,245,247); doc.rect(110,y,85,7,'F');
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text('LOCATAIRE',113,y+5);
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text(locNom,113,y+14);
-  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(107,118,137);
   let ly=y+19;
   if(loc.adresse){doc.text(loc.adresse,113,ly);ly+=4;}
   if(loc.cp||loc.ville){doc.text(`${loc.cp||''} ${loc.ville||''}`,113,ly);}
 
-  y=76; doc.setDrawColor(189,195,199); doc.line(15,y,195,y); y+=5;
+  y=76; doc.setDrawColor(216,220,227); doc.line(15,y,195,y); y+=5;
 
-  // Bien
-  doc.setFillColor(248,249,250); doc.rect(15,y,180,20,'F');
-  doc.setDrawColor(189,195,199); doc.rect(15,y,180,20,'S');
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  // \u2500\u2500 Bien (bordure-left bleu nuit + fond l\u00e9g\u00e8rement gris) \u2500\u2500
+  doc.setFillColor(250,251,252); doc.rect(15,y,180,20,'F');
+  doc.setFillColor(27,42,78); doc.rect(15,y,1.2,20,'F');
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text('Bien lou\u00e9 :',20,y+6);
   doc.setFont('helvetica','normal');
   doc.text(`${bien.designation||''} (${bien.type||''})`,48,y+6);
@@ -5805,49 +5805,50 @@ function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverri
 
   y+=24;
 
-  // Date d'\u00e9ch\u00e9ance du paiement
-  doc.setFillColor(235,245,251); doc.rect(15,y,180,10,'F');
-  doc.setDrawColor(52,152,219); doc.rect(15,y,180,10,'S');
-  doc.setTextColor(52,152,219); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+  // \u2500\u2500 Date d'\u00e9ch\u00e9ance du paiement (encadr\u00e9 gris clair, bordure bleu nuit) \u2500\u2500
+  doc.setFillColor(244,245,247); doc.rect(15,y,180,10,'F');
+  doc.setDrawColor(27,42,78); doc.setLineWidth(0.3); doc.rect(15,y,180,10,'S'); doc.setLineWidth(0.2);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(10);
   doc.text(`Date d'\u00e9ch\u00e9ance du paiement : ${String(jour).padStart(2,'0')}/${String(moisNum).padStart(2,'0')}/${annee}`, w/2, y+6.5, {align:'center'});
   y+=14;
 
-  doc.setFillColor(52,152,219); doc.rect(15,y,180,8,'F');
+  // \u2500\u2500 Bandeau "D\u00e9tail du paiement" \u2500\u2500
+  doc.setFillColor(27,42,78); doc.rect(15,y,180,8,'F');
   doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(10);
   doc.text('D\u00c9TAIL DU PAIEMENT',w/2,y+6,{align:'center'});
   y+=14;
 
-  // Bandeau prorata (mois d'entr\u00e9e ou de sortie)
+  // \u2500\u2500 Bandeau prorata (alerte sobre, texte slate sur fond gris clair) \u2500\u2500
   if (_appliquerProrata) {
     const _fmtJ = (dt) => String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear();
     const _libProrata = (_pr.motif === 'sortie' ? 'Prorata sortie' : 'Prorata d\'entr\u00e9e')
       + ' \u2014 du '+_fmtJ(_pr.dateStart)+' au '+_fmtJ(_pr.dateEnd)
       + ' ('+_pr.joursActifs+'/'+_pr.joursDansMois+' jours)';
-    doc.setFillColor(255,243,205); doc.rect(15,y,180,9,'F');
-    doc.setDrawColor(245,158,11); doc.rect(15,y,180,9,'S');
-    doc.setTextColor(133,77,14); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+    doc.setFillColor(244,245,247); doc.rect(15,y,180,9,'F');
+    doc.setDrawColor(27,42,78); doc.setLineWidth(0.3); doc.rect(15,y,180,9,'S'); doc.setLineWidth(0.2);
+    doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
     doc.text(_libProrata, w/2, y+6, {align:'center'});
     y+=13;
   }
 
-  doc.setFillColor(44,62,80); doc.rect(25,y,160,8,'F');
+  // \u2500\u2500 Header tableau \u2500\u2500
+  doc.setFillColor(27,42,78); doc.rect(25,y,160,8,'F');
   doc.setTextColor(255); doc.setFontSize(9); doc.setFont('helvetica','bold');
   doc.text('D\u00e9signation',30,y+6); doc.text('Montant',170,y+6,{align:'right'});
   y+=10;
 
   const isTrimQ = periodeLabel==='trimestrielle';
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','normal'); doc.setFontSize(9);
   const _libLoyer = isTrimQ
     ? 'Loyer trimestriel hors charges (3 mois)'
     : (_appliquerProrata ? 'Prorata loyer hors charges ('+_pr.joursActifs+'/'+_pr.joursDansMois+' j)' : 'Loyer hors charges');
   doc.text(_libLoyer,30,y+5); doc.text(fmt(loyer),170,y+5,{align:'right'});
-  doc.setDrawColor(220,220,220); doc.line(25,y+8,185,y+8); y+=10;
+  doc.setDrawColor(216,220,227); doc.line(25,y+8,185,y+8); y+=10;
   const _libChargesBase = isTrimQ?'Charges trimestrielles':(bail.periodiciteCharges==='annuelle'?'Charges annuelles':'Provision pour charges');
   const chargeLabel = (_appliquerProrata && !isTrimQ ? 'Prorata '+_libChargesBase.toLowerCase()+' ('+_pr.joursActifs+'/'+_pr.joursDansMois+' j)' : _libChargesBase);
   doc.text(chargeLabel+(charges===0?' (non applicable)':''),30,y+5); doc.text(fmt(charges),170,y+5,{align:'right'});
   doc.line(25,y+8,185,y+8); y+=10;
 
-  // Ligne d\u00e9p\u00f4t de garantie (si encaiss\u00e9 sur ce mois)
   if (_dg) {
     doc.text('D\u00e9p\u00f4t de garantie',30,y+5);
     doc.text(fmt(dgMontant),170,y+5,{align:'right'});
@@ -5855,19 +5856,20 @@ function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverri
   }
   y+=4;
 
-  doc.setFillColor(235,245,251); doc.rect(25,y,160,10,'F');
-  doc.setDrawColor(44,62,80); doc.line(25,y,185,y);
-  doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  // \u2500\u2500 Total \u2500\u2500
+  doc.setFillColor(244,245,247); doc.rect(25,y,160,10,'F');
+  doc.setDrawColor(27,42,78); doc.setLineWidth(0.5); doc.line(25,y,185,y); doc.setLineWidth(0.2);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(11);
   doc.text(isTrimQ?'TOTAL TRIMESTRIEL':'TOTAL',30,y+7); doc.text(fmt(total),170,y+7,{align:'right'});
-  doc.line(25,y+10,185,y+10);
+  doc.setDrawColor(216,220,227); doc.line(25,y+10,185,y+10);
 
   y+=18;
-  doc.setFont('helvetica','italic'); doc.setFontSize(8); doc.setTextColor(100);
+  doc.setFont('helvetica','italic'); doc.setFontSize(8); doc.setTextColor(107,118,137);
   const sommeLettre = doc.splitTextToSize('Soit la somme de : '+numberToFrench(total), 155);
   doc.text(sommeLettre,25,y); y+=sommeLettre.length*3.5;
 
-  y+=8; doc.setDrawColor(189,195,199); doc.line(20,y,190,y); y+=6;
-  doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(100);
+  y+=8; doc.setDrawColor(216,220,227); doc.line(20,y,190,y); y+=6;
+  doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(107,118,137);
   const _periodeLegal = _appliquerProrata
     ? `la p\u00e9riode ${_periodeQ} (${_pr.joursActifs}/${_pr.joursDansMois} jours)`
     : `la p\u00e9riode ${_periodeQ}`;
@@ -5881,12 +5883,13 @@ function genQuittancePDF(bail, P, periode, mois, annee, chargesMois, loyerOverri
   doc.text(leg2,30,y); y+=leg2.length*3.5;
 
   y+=12;
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','normal'); doc.setFontSize(9);
   doc.text(`Fait \u00e0 ${P.ville||'___________'}, le ${todayFr()}`,25,y);
 
   drawRibBox(doc, P, h);
 
-  doc.setFillColor(44,62,80); doc.rect(0,h-10,w,10,'F');
+  // \u2500\u2500 Footer bleu nuit \u2500\u2500
+  doc.setFillColor(27,42,78); doc.rect(0,h-10,w,10,'F');
   doc.setTextColor(255); doc.setFontSize(6); doc.setFont('helvetica','normal');
   doc.text('Document g\u00e9n\u00e9r\u00e9 automatiquement - Gestion Locative',w/2,h-4,{align:'center'});
 
@@ -5908,7 +5911,8 @@ function genAvisPDF(bail, P, periode, mois, annee, chargesMois, loyerOverride, p
   const jour = bail.jourEcheance||1;
   const moisNum = MOIS_NUM[mois]||1;
 
-  doc.setFillColor(231,76,60); doc.rect(0,0,w,28,'F');
+  // \u2500\u2500 Header bleu nuit \u2500\u2500
+  doc.setFillColor(27,42,78); doc.rect(0,0,w,28,'F');
   doc.setTextColor(255); doc.setFontSize(20); doc.setFont('helvetica','bold');
   doc.text("AVIS D'\u00c9CH\u00c9ANCE",w/2,14,{align:'center'});
   doc.setFontSize(10); doc.setFont('helvetica','normal');
@@ -5917,32 +5921,35 @@ function genAvisPDF(bail, P, periode, mois, annee, chargesMois, loyerOverride, p
 
   let y=36;
 
-  doc.setFillColor(44,62,80); doc.rect(15,y,85,7,'F');
-  doc.setTextColor(255); doc.setFontSize(9); doc.setFont('helvetica','bold');
+  // \u2500\u2500 Bailleur (bandeau gris clair, texte bleu nuit) \u2500\u2500
+  doc.setFillColor(244,245,247); doc.rect(15,y,85,7,'F');
+  doc.setTextColor(27,42,78); doc.setFontSize(9); doc.setFont('helvetica','bold');
   doc.text('BAILLEUR',18,y+5);
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
-  doc.text(P.nom||'[ \u00C0 compl\u00e9ter ]',18,y+14);
-  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.text(P.nom||'[ \u00c0 compl\u00e9ter ]',18,y+14);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(107,118,137);
   let by=y+19;
   if(P.adresse){doc.text(P.adresse,18,by);by+=4;}
   if(P.cp||P.ville){doc.text(`${P.cp||''} ${P.ville||''}`,18,by);by+=4;}
   if(P.siret){doc.text('SIRET : '+P.siret,18,by);}
 
-  doc.setFillColor(44,62,80); doc.rect(110,y,85,7,'F');
-  doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  // \u2500\u2500 Locataire \u2500\u2500
+  doc.setFillColor(244,245,247); doc.rect(110,y,85,7,'F');
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text('LOCATAIRE',113,y+5);
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text(locNom,113,y+14);
-  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(107,118,137);
   let ly=y+19;
   if(loc.adresse){doc.text(loc.adresse,113,ly);ly+=4;}
   if(loc.cp||loc.ville){doc.text(`${loc.cp||''} ${loc.ville||''}`,113,ly);}
 
-  y=76; doc.setDrawColor(189,195,199); doc.line(15,y,195,y); y+=5;
+  y=76; doc.setDrawColor(216,220,227); doc.line(15,y,195,y); y+=5;
 
-  doc.setFillColor(248,249,250); doc.rect(15,y,180,16,'F');
-  doc.setDrawColor(189,195,199); doc.rect(15,y,180,16,'S');
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  // \u2500\u2500 Bien (bordure-left bleu nuit) \u2500\u2500
+  doc.setFillColor(250,251,252); doc.rect(15,y,180,16,'F');
+  doc.setFillColor(27,42,78); doc.rect(15,y,1.2,16,'F');
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text('Bien lou\u00e9 :',20,y+6);
   doc.setFont('helvetica','normal');
   doc.text(`${bien.designation||''} (${bien.type||''})`,48,y+6);
@@ -5950,56 +5957,61 @@ function genAvisPDF(bail, P, periode, mois, annee, chargesMois, loyerOverride, p
 
   y+=24;
 
-  doc.setFillColor(250,219,216); doc.rect(15,y,180,18,'F');
-  doc.setDrawColor(231,76,60); doc.rect(15,y,180,18,'S');
-  doc.setTextColor(231,76,60); doc.setFont('helvetica','bold'); doc.setFontSize(12);
+  // \u2500\u2500 Encadr\u00e9 principal "Date d'\u00e9ch\u00e9ance + Montant \u00e0 r\u00e9gler" (gros, sobre) \u2500\u2500
+  doc.setFillColor(244,245,247); doc.rect(15,y,180,18,'F');
+  doc.setDrawColor(27,42,78); doc.setLineWidth(0.6); doc.rect(15,y,180,18,'S'); doc.setLineWidth(0.2);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(12);
   doc.text(`Date d'\u00e9ch\u00e9ance : ${String(jour).padStart(2,'0')}/${String(moisNum).padStart(2,'0')}/${annee}`,w/2,y+7,{align:'center'});
-  doc.setTextColor(44,62,80); doc.setFontSize(11);
+  doc.setTextColor(27,42,78); doc.setFontSize(11);
   doc.text(`Montant \u00e0 r\u00e9gler : ${fmt(total)}`,w/2,y+14,{align:'center'});
 
   y+=26;
 
-  doc.setFillColor(44,62,80); doc.rect(15,y,180,8,'F');
+  // \u2500\u2500 Bandeau "D\u00e9tail de l'\u00e9ch\u00e9ance" \u2500\u2500
+  doc.setFillColor(27,42,78); doc.rect(15,y,180,8,'F');
   doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(10);
   doc.text("D\u00c9TAIL DE L'\u00c9CH\u00c9ANCE",w/2,y+6,{align:'center'});
   y+=14;
 
-  doc.setFillColor(44,62,80); doc.rect(25,y,160,8,'F');
+  // \u2500\u2500 Header tableau \u2500\u2500
+  doc.setFillColor(27,42,78); doc.rect(25,y,160,8,'F');
   doc.setTextColor(255); doc.setFontSize(9); doc.setFont('helvetica','bold');
   doc.text('D\u00e9signation',30,y+6); doc.text('Montant',170,y+6,{align:'right'});
   y+=10;
 
   const isTrimA = periodeLabel==='trimestrielle';
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','normal'); doc.setFontSize(9);
   doc.text(isTrimA?'Loyer trimestriel hors charges (3 mois)':'Loyer hors charges',30,y+5); doc.text(fmt(loyer),170,y+5,{align:'right'});
-  doc.setDrawColor(220,220,220); doc.line(25,y+8,185,y+8); y+=10;
+  doc.setDrawColor(216,220,227); doc.line(25,y+8,185,y+8); y+=10;
   const chargeLabelA = isTrimA?'Charges trimestrielles':(bail.periodiciteCharges==='annuelle'?'Charges annuelles':'Provision pour charges');
   doc.text(chargeLabelA+(charges===0?' (non applicable)':''),30,y+5); doc.text(fmt(charges),170,y+5,{align:'right'});
   doc.line(25,y+8,185,y+8); y+=14;
 
-  doc.setFillColor(250,219,216); doc.rect(25,y,160,10,'F');
-  doc.setDrawColor(231,76,60); doc.line(25,y,185,y);
-  doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  // \u2500\u2500 Total \u2500\u2500
+  doc.setFillColor(244,245,247); doc.rect(25,y,160,10,'F');
+  doc.setDrawColor(27,42,78); doc.setLineWidth(0.5); doc.line(25,y,185,y); doc.setLineWidth(0.2);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(11);
   doc.text(isTrimA?'TOTAL TRIMESTRIEL \u00c0 R\u00c9GLER':'TOTAL \u00c0 R\u00c9GLER',30,y+7); doc.text(fmt(total),170,y+7,{align:'right'});
-  doc.line(25,y+10,185,y+10);
+  doc.setDrawColor(216,220,227); doc.line(25,y+10,185,y+10);
 
   y+=18;
-  doc.setFont('helvetica','italic'); doc.setFontSize(8); doc.setTextColor(100);
+  doc.setFont('helvetica','italic'); doc.setFontSize(8); doc.setTextColor(107,118,137);
   const sommeL2 = doc.splitTextToSize('Soit la somme de : '+numberToFrench(total), 155);
   doc.text(sommeL2,25,y); y+=sommeL2.length*3.5;
 
-  y+=8; doc.setDrawColor(189,195,199); doc.line(20,y,190,y); y+=6;
-  doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(100);
+  y+=8; doc.setDrawColor(216,220,227); doc.line(20,y,190,y); y+=6;
+  doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(107,118,137);
   const mentions = doc.splitTextToSize("Cet avis d'\u00e9ch\u00e9ance ne constitue pas une quittance de loyer. La quittance vous sera d\u00e9livr\u00e9e apr\u00e8s encaissement effectif du paiement. Merci d'effectuer votre r\u00e8glement avant le "+String(jour).padStart(2,'0')+"/"+String(moisNum).padStart(2,'0')+"/"+annee+". En cas de difficult\u00e9s de paiement, nous vous invitons \u00e0 prendre contact avec nous dans les meilleurs d\u00e9lais.", 145);
   doc.text(mentions,30,y); y+=mentions.length*3.5;
 
   y+=12;
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','normal'); doc.setFontSize(9);
   doc.text(`Fait \u00e0 ${P.ville||'___________'}, le ${todayFr()}`,25,y);
 
   drawRibBox(doc, P, h);
 
-  doc.setFillColor(231,76,60); doc.rect(0,h-10,w,10,'F');
+  // \u2500\u2500 Footer bleu nuit \u2500\u2500
+  doc.setFillColor(27,42,78); doc.rect(0,h-10,w,10,'F');
   doc.setTextColor(255); doc.setFontSize(6); doc.setFont('helvetica','normal');
   doc.text('Document g\u00e9n\u00e9r\u00e9 automatiquement - Gestion Locative',w/2,h-4,{align:'center'});
 
@@ -6038,7 +6050,7 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   const periode = mois+' '+annee;
 
   // ═══ PAGE 1 : QUITTANCE ═══
-  doc.setFillColor(44,62,80); doc.rect(0,0,w,28,'F');
+  doc.setFillColor(27,42,78); doc.rect(0,0,w,28,'F');
   doc.setTextColor(255); doc.setFontSize(20); doc.setFont('helvetica','bold');
   doc.text('QUITTANCE DE LOYER',w/2,14,{align:'center'});
   doc.setFontSize(10); doc.setFont('helvetica','normal');
@@ -6048,34 +6060,34 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   let y=36;
 
   // Bailleur
-  doc.setFillColor(52,152,219); doc.rect(15,y,85,7,'F');
-  doc.setTextColor(255); doc.setFontSize(9); doc.setFont('helvetica','bold');
+  doc.setFillColor(244,245,247); doc.rect(15,y,85,7,'F');
+  doc.setTextColor(27,42,78); doc.setFontSize(9); doc.setFont('helvetica','bold');
   doc.text('BAILLEUR',18,y+5);
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text(P.nom||'',18,y+14);
-  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(107,118,137);
   let by=y+19;
   if(P.adresse){doc.text(P.adresse,18,by);by+=4;}
   if(P.cp||P.ville){doc.text(`${P.cp||''} ${P.ville||''}`,18,by);by+=4;}
   if(P.siret){doc.text('SIRET : '+P.siret,18,by);}
 
   // Locataire
-  doc.setFillColor(52,152,219); doc.rect(110,y,85,7,'F');
-  doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.setFillColor(244,245,247); doc.rect(110,y,85,7,'F');
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text('LOCATAIRE',113,y+5);
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text(locNom,113,y+14);
-  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(107,118,137);
   let ly=y+19;
   if(loc.adresse){doc.text(loc.adresse,113,ly);ly+=4;}
   if(loc.cp||loc.ville){doc.text(`${loc.cp||''} ${loc.ville||''}`,113,ly);}
 
-  y=76; doc.setDrawColor(189,195,199); doc.line(15,y,195,y); y+=5;
+  y=76; doc.setDrawColor(216,220,227); doc.line(15,y,195,y); y+=5;
 
   // Bien
-  doc.setFillColor(248,249,250); doc.rect(15,y,180,20,'F');
-  doc.setDrawColor(189,195,199); doc.rect(15,y,180,20,'S');
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.setFillColor(250,251,252); doc.rect(15,y,180,20,'F');
+  doc.setFillColor(27,42,78); doc.rect(15,y,1.2,20,'F');
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text('Bien lou\u00e9 :',20,y+6);
   doc.setFont('helvetica','normal');
   doc.text(`${bien.designation||''} (${bien.type||''})`,48,y+6);
@@ -6084,9 +6096,9 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   y+=24;
 
   // Date d'\u00e9ch\u00e9ance du paiement (p\u00e9riode de la quittance)
-  doc.setFillColor(235,245,251); doc.rect(15,y,180,10,'F');
-  doc.setDrawColor(52,152,219); doc.rect(15,y,180,10,'S');
-  doc.setTextColor(52,152,219); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+  doc.setFillColor(244,245,247); doc.rect(15,y,180,10,'F');
+  doc.setDrawColor(27,42,78); doc.rect(15,y,180,10,'S');
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(10);
   doc.text(`Date d'\u00e9ch\u00e9ance du paiement : ${String(jour).padStart(2,'0')}/${String(moisNum).padStart(2,'0')}/${annee}`, w/2, y+6.5, {align:'center'});
   y+=14;
 
@@ -6094,23 +6106,23 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   //    (le d\u00e9tail 0,00 \u20ac reste affich\u00e9 dessous pour \u00eatre explicite)
   const bailActifPrev = isBailActifPourMois(bail, moisNum, annee);
   if (!bailActifPrev) {
-    doc.setFillColor(254,249,231); doc.rect(15,y,180,16,'F');
-    doc.setDrawColor(245,158,11); doc.rect(15,y,180,16,'S');
-    doc.setTextColor(180,100,0); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+    doc.setFillColor(244,245,247); doc.rect(15,y,180,16,'F');
+    doc.setDrawColor(107,118,137); doc.setLineWidth(0.3); doc.rect(15,y,180,16,'S'); doc.setLineWidth(0.2);
+    doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(10);
     doc.text('Aucune quittance \u00e0 \u00e9mettre \u2014 bail pas encore actif au mois pr\u00e9c\u00e9dent',w/2,y+6,{align:'center'});
-    doc.setFont('helvetica','normal'); doc.setFontSize(8);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(107,118,137);
     doc.text('Ce document ne constitue pas une quittance valide pour la p\u00e9riode concern\u00e9e.',w/2,y+12,{align:'center'});
     y+=22;
   } else if (!prevPaye) {
-    // Message mois pr\u00e9c\u00e9dent non pay\u00e9
-    doc.setFillColor(253,237,236); doc.rect(15,y,180,12,'F');
-    doc.setDrawColor(231,76,60); doc.rect(15,y,180,12,'S');
-    doc.setTextColor(231,76,60); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+    // Message mois pr\u00e9c\u00e9dent non pay\u00e9 (alerte sobre, bordeaux)
+    doc.setFillColor(244,245,247); doc.rect(15,y,180,12,'F');
+    doc.setDrawColor(166,47,47); doc.setLineWidth(0.4); doc.rect(15,y,180,12,'S'); doc.setLineWidth(0.2);
+    doc.setTextColor(166,47,47); doc.setFont('helvetica','bold'); doc.setFontSize(9);
     doc.text(isTrimC?'Le paiement du trimestre pr\u00e9c\u00e9dent n\'ayant pas \u00e9t\u00e9 enregistr\u00e9, cette quittance est \u00e9tablie pour un montant de 0,00 \u20AC.':'Le paiement du mois pr\u00e9c\u00e9dent n\'ayant pas \u00e9t\u00e9 enregistr\u00e9, cette quittance est \u00e9tablie pour un montant de 0,00 \u20AC.',20,y+8);
     y+=18;
   }
 
-  doc.setFillColor(52,152,219); doc.rect(15,y,180,8,'F');
+  doc.setFillColor(27,42,78); doc.rect(15,y,180,8,'F');
   doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(10);
   doc.text('D\u00c9TAIL DU PAIEMENT',w/2,y+6,{align:'center'});
   y+=14;
@@ -6121,19 +6133,19 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
     const _libProrataC = (_qPr.motif === 'sortie' ? 'Prorata sortie' : 'Prorata d\'entr\u00e9e')
       + ' \u2014 du '+_fmtJC(_qPr.dateStart)+' au '+_fmtJC(_qPr.dateEnd)
       + ' ('+_qPr.joursActifs+'/'+_qPr.joursDansMois+' jours)';
-    doc.setFillColor(255,243,205); doc.rect(15,y,180,9,'F');
-    doc.setDrawColor(245,158,11); doc.rect(15,y,180,9,'S');
-    doc.setTextColor(133,77,14); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+    doc.setFillColor(244,245,247); doc.rect(15,y,180,9,'F');
+    doc.setDrawColor(27,42,78); doc.setLineWidth(0.3); doc.rect(15,y,180,9,'S'); doc.setLineWidth(0.2);
+    doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
     doc.text(_libProrataC, w/2, y+6, {align:'center'});
     y+=13;
   }
 
-  doc.setFillColor(44,62,80); doc.rect(25,y,160,8,'F');
+  doc.setFillColor(27,42,78); doc.rect(25,y,160,8,'F');
   doc.setTextColor(255); doc.setFontSize(9); doc.setFont('helvetica','bold');
   doc.text('D\u00e9signation',30,y+6); doc.text('Montant',170,y+6,{align:'right'});
   y+=10;
 
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','normal'); doc.setFontSize(9);
   const _libLoyerC = isTrimC
     ? 'Loyer trimestriel hors charges (3 mois)'
     : (_qApplyProrata ? 'Prorata loyer hors charges ('+_qPr.joursActifs+'/'+_qPr.joursDansMois+' j)' : 'Loyer hors charges');
@@ -6151,8 +6163,8 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   }
   y+=4;
 
-  doc.setFillColor(235,245,251); doc.rect(25,y,160,10,'F');
-  doc.setDrawColor(44,62,80); doc.line(25,y,185,y);
+  doc.setFillColor(244,245,247); doc.rect(25,y,160,10,'F');
+  doc.setDrawColor(27,42,78); doc.line(25,y,185,y);
   doc.setFont('helvetica','bold'); doc.setFontSize(11);
   doc.text('TOTAL',30,y+7); doc.text(fmt(qTotal),170,y+7,{align:'right'});
   doc.line(25,y+10,185,y+10);
@@ -6162,7 +6174,7 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   const sommeL = doc.splitTextToSize('Soit la somme de : '+numberToFrench(qTotal), 155);
   doc.text(sommeL,25,y); y+=sommeL.length*3.5;
 
-  y+=8; doc.setDrawColor(189,195,199); doc.line(20,y,190,y); y+=6;
+  y+=8; doc.setDrawColor(216,220,227); doc.line(20,y,190,y); y+=6;
   doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(100);
   const _periodeLegalC = _qApplyProrata
     ? `la p\u00e9riode ${_periodeC1} (${_qPr.joursActifs}/${_qPr.joursDansMois} jours)`
@@ -6176,12 +6188,12 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   const leg2 = doc.splitTextToSize('Cette quittance annule tous les re\u00e7us qui auraient pu \u00eatre d\u00e9livr\u00e9s pour acomptes vers\u00e9s au titre de cette m\u00eame p\u00e9riode. Elle est d\u00e9livr\u00e9e sous r\u00e9serve de tous droits, actions et proc\u00e9dures du bailleur.',145);
   doc.text(leg2,30,y); y+=leg2.length*3.5;
   y+=12;
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','normal'); doc.setFontSize(9);
   doc.text(`Fait \u00e0 ${P.ville||'___________'}, le ${todayFr()}`,25,y);
 
   drawRibBox(doc, P, h);
 
-  doc.setFillColor(44,62,80); doc.rect(0,h-10,w,10,'F');
+  doc.setFillColor(27,42,78); doc.rect(0,h-10,w,10,'F');
   doc.setTextColor(255); doc.setFontSize(6); doc.setFont('helvetica','normal');
   doc.text('Document g\u00e9n\u00e9r\u00e9 automatiquement - Gestion Locative',w/2,h-4,{align:'center'});
 
@@ -6190,7 +6202,7 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   const nextPeriode = nextMoisNom+' '+nextAnnee;
   const _periodeC2 = (function(){ const pd = getPeriodeDates(nextMoisNum, nextAnnee, periodeLabel, null); return formatPeriodeFr(pd.dateDebut, pd.dateFin); })();
 
-  doc.setFillColor(231,76,60); doc.rect(0,0,w,28,'F');
+  doc.setFillColor(27,42,78); doc.rect(0,0,w,28,'F');
   doc.setTextColor(255); doc.setFontSize(20); doc.setFont('helvetica','bold');
   doc.text("AVIS D'\u00c9CH\u00c9ANCE",w/2,14,{align:'center'});
   doc.setFontSize(10); doc.setFont('helvetica','normal');
@@ -6198,10 +6210,10 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
 
   y=36;
 
-  doc.setFillColor(44,62,80); doc.rect(15,y,85,7,'F');
+  doc.setFillColor(27,42,78); doc.rect(15,y,85,7,'F');
   doc.setTextColor(255); doc.setFontSize(9); doc.setFont('helvetica','bold');
   doc.text('BAILLEUR',18,y+5);
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text(P.nom||'',18,y+14);
   doc.setFont('helvetica','normal'); doc.setFontSize(8);
   by=y+19;
@@ -6209,54 +6221,54 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   if(P.cp||P.ville){doc.text(`${P.cp||''} ${P.ville||''}`,18,by);by+=4;}
   if(P.siret){doc.text('SIRET : '+P.siret,18,by);}
 
-  doc.setFillColor(44,62,80); doc.rect(110,y,85,7,'F');
+  doc.setFillColor(27,42,78); doc.rect(110,y,85,7,'F');
   doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text('LOCATAIRE',113,y+5);
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text(locNom,113,y+14);
   doc.setFont('helvetica','normal'); doc.setFontSize(8);
   ly=y+19;
   if(loc.adresse){doc.text(loc.adresse,113,ly);ly+=4;}
   if(loc.cp||loc.ville){doc.text(`${loc.cp||''} ${loc.ville||''}`,113,ly);}
 
-  y=76; doc.setDrawColor(189,195,199); doc.line(15,y,195,y); y+=5;
+  y=76; doc.setDrawColor(216,220,227); doc.line(15,y,195,y); y+=5;
 
-  doc.setFillColor(248,249,250); doc.rect(15,y,180,16,'F');
-  doc.setDrawColor(189,195,199); doc.rect(15,y,180,16,'S');
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.setFillColor(250,251,252); doc.rect(15,y,180,16,'F');
+  doc.setFillColor(27,42,78); doc.rect(15,y,1.2,16,'F');
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text('Bien lou\u00e9 :',20,y+6);
   doc.setFont('helvetica','normal');
   doc.text(`${bien.designation||''} (${bien.type||''})`,48,y+6);
   doc.text(`Adresse : ${bien.adresse||''} - ${bien.cp||''} ${bien.ville||''}`,20,y+12);
   y+=24;
 
-  doc.setFillColor(250,219,216); doc.rect(15,y,180,18,'F');
-  doc.setDrawColor(231,76,60); doc.rect(15,y,180,18,'S');
-  doc.setTextColor(231,76,60); doc.setFont('helvetica','bold'); doc.setFontSize(12);
+  doc.setFillColor(244,245,247); doc.rect(15,y,180,18,'F');
+  doc.setDrawColor(27,42,78); doc.rect(15,y,180,18,'S');
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(12);
   doc.text(`Date d'\u00e9ch\u00e9ance : ${String(jour).padStart(2,'0')}/${String(nextMoisNum).padStart(2,'0')}/${nextAnnee}`,w/2,y+7,{align:'center'});
-  doc.setTextColor(44,62,80); doc.setFontSize(11);
+  doc.setTextColor(27,42,78); doc.setFontSize(11);
   doc.text(`Montant \u00e0 r\u00e9gler : ${fmt(aTotal)}`,w/2,y+14,{align:'center'});
   y+=26;
 
-  doc.setFillColor(44,62,80); doc.rect(15,y,180,8,'F');
+  doc.setFillColor(27,42,78); doc.rect(15,y,180,8,'F');
   doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(10);
   doc.text("D\u00c9TAIL DE L'\u00c9CH\u00c9ANCE",w/2,y+6,{align:'center'});
   y+=14;
 
-  doc.setFillColor(44,62,80); doc.rect(25,y,160,8,'F');
+  doc.setFillColor(27,42,78); doc.rect(25,y,160,8,'F');
   doc.setTextColor(255); doc.setFontSize(9); doc.setFont('helvetica','bold');
   doc.text('D\u00e9signation',30,y+6); doc.text('Montant',170,y+6,{align:'right'});
   y+=10;
 
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','normal'); doc.setFontSize(9);
   doc.text(isTrimC?'Loyer trimestriel hors charges (3 mois)':'Loyer hors charges',30,y+5); doc.text(fmt(aLoyer),170,y+5,{align:'right'});
   doc.setDrawColor(220,220,220); doc.line(25,y+8,185,y+8); y+=10;
   const aChargeLabelC = isTrimC?'Charges trimestrielles':'Provision pour charges';
   doc.text(aChargeLabelC+(aCharges===0?' (non applicable)':''),30,y+5); doc.text(fmt(aCharges),170,y+5,{align:'right'});
   doc.line(25,y+8,185,y+8); y+=14;
 
-  doc.setFillColor(250,219,216); doc.rect(25,y,160,10,'F');
-  doc.setDrawColor(231,76,60); doc.line(25,y,185,y);
+  doc.setFillColor(244,245,247); doc.rect(25,y,160,10,'F');
+  doc.setDrawColor(27,42,78); doc.line(25,y,185,y);
   doc.setFont('helvetica','bold'); doc.setFontSize(11);
   doc.text(isTrimC?'TOTAL TRIMESTRIEL \u00c0 R\u00c9GLER':'TOTAL \u00c0 R\u00c9GLER',30,y+7); doc.text(fmt(aTotal),170,y+7,{align:'right'});
   doc.line(25,y+10,185,y+10);
@@ -6266,18 +6278,18 @@ function genCombinePDF(bail, P, mois, annee, moisNum, qLoyer, qCharges, prevPaye
   const sommeL2 = doc.splitTextToSize('Soit la somme de : '+numberToFrench(aTotal), 155);
   doc.text(sommeL2,25,y); y+=sommeL2.length*3.5;
 
-  y+=8; doc.setDrawColor(189,195,199); doc.line(20,y,190,y); y+=6;
+  y+=8; doc.setDrawColor(216,220,227); doc.line(20,y,190,y); y+=6;
   doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(100);
   const mentions = doc.splitTextToSize("Cet avis d'\u00e9ch\u00e9ance ne constitue pas une quittance de loyer. La quittance vous sera d\u00e9livr\u00e9e apr\u00e8s encaissement effectif du paiement. Merci d'effectuer votre r\u00e8glement avant le "+String(jour).padStart(2,'0')+"/"+String(nextMoisNum).padStart(2,'0')+"/"+nextAnnee+".", 145);
   doc.text(mentions,30,y);
 
   y+=mentions.length*3.5+12;
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','normal'); doc.setFontSize(9);
   doc.text(`Fait \u00e0 ${P.ville||'___________'}, le ${todayFr()}`,25,y);
 
   drawRibBox(doc, P, h);
 
-  doc.setFillColor(231,76,60); doc.rect(0,h-10,w,10,'F');
+  doc.setFillColor(27,42,78); doc.rect(0,h-10,w,10,'F');
   doc.setTextColor(255); doc.setFontSize(6); doc.setFont('helvetica','normal');
   doc.text('Document g\u00e9n\u00e9r\u00e9 automatiquement - Gestion Locative',w/2,h-4,{align:'center'});
 
@@ -6341,7 +6353,7 @@ function genEntreePDF(bail, P, returnBlob) {
   const moisPlein = loyerMens + chargesMens;
 
   // ── Header ──
-  doc.setFillColor(22,160,133); doc.rect(0,0,w,28,'F');
+  doc.setFillColor(27,42,78); doc.rect(0,0,w,28,'F');
   doc.setTextColor(255); doc.setFontSize(20); doc.setFont('helvetica','bold');
   doc.text("D\u00c9COMPTE D'ENTR\u00c9E",w/2,14,{align:'center'});
   doc.setFontSize(10); doc.setFont('helvetica','normal');
@@ -6351,34 +6363,34 @@ function genEntreePDF(bail, P, returnBlob) {
   let y=36;
 
   // Bailleur
-  doc.setFillColor(52,152,219); doc.rect(15,y,85,7,'F');
-  doc.setTextColor(255); doc.setFontSize(9); doc.setFont('helvetica','bold');
+  doc.setFillColor(244,245,247); doc.rect(15,y,85,7,'F');
+  doc.setTextColor(27,42,78); doc.setFontSize(9); doc.setFont('helvetica','bold');
   doc.text('BAILLEUR',18,y+5);
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text(P.nom||'[ \u00c0 compl\u00e9ter ]',18,y+14);
-  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(107,118,137);
   let by=y+19;
   if(P.adresse){doc.text(P.adresse,18,by);by+=4;}
   if(P.cp||P.ville){doc.text(`${P.cp||''} ${P.ville||''}`,18,by);by+=4;}
   if(P.siret){doc.text('SIRET : '+P.siret,18,by);}
 
   // Locataire
-  doc.setFillColor(52,152,219); doc.rect(110,y,85,7,'F');
-  doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.setFillColor(244,245,247); doc.rect(110,y,85,7,'F');
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text('LOCATAIRE',113,y+5);
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text(locNom,113,y+14);
-  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(107,118,137);
   let ly=y+19;
   if(loc.adresse){doc.text(loc.adresse,113,ly);ly+=4;}
   if(loc.cp||loc.ville){doc.text(`${loc.cp||''} ${loc.ville||''}`,113,ly);}
 
-  y=76; doc.setDrawColor(189,195,199); doc.line(15,y,195,y); y+=5;
+  y=76; doc.setDrawColor(216,220,227); doc.line(15,y,195,y); y+=5;
 
   // Bien
-  doc.setFillColor(248,249,250); doc.rect(15,y,180,20,'F');
-  doc.setDrawColor(189,195,199); doc.rect(15,y,180,20,'S');
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.setFillColor(250,251,252); doc.rect(15,y,180,20,'F');
+  doc.setFillColor(27,42,78); doc.rect(15,y,1.2,20,'F');
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text('Bien lou\u00e9 :',20,y+6);
   doc.setFont('helvetica','normal');
   doc.text(`${bien.designation||''} (${bien.type||''})`,48,y+6);
@@ -6387,9 +6399,9 @@ function genEntreePDF(bail, P, returnBlob) {
   y+=24;
 
   // Encart p\u00e9riode de prorata
-  doc.setFillColor(232,246,241); doc.rect(15,y,180,14,'F');
-  doc.setDrawColor(22,160,133); doc.rect(15,y,180,14,'S');
-  doc.setTextColor(22,160,133); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+  doc.setFillColor(244,245,247); doc.rect(15,y,180,14,'F');
+  doc.setDrawColor(27,42,78); doc.rect(15,y,180,14,'S');
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(10);
   const entreeStr = String(jourEntree).padStart(2,'0')+'/'+String(moisEntree).padStart(2,'0')+'/'+anneeEntree;
   const finMoisStr = String(joursDansMois).padStart(2,'0')+'/'+String(moisEntree).padStart(2,'0')+'/'+anneeEntree;
   const prorataInfo = entreeComplete
@@ -6399,18 +6411,18 @@ function genEntreePDF(bail, P, returnBlob) {
   y+=18;
 
   // Titre tableau
-  doc.setFillColor(22,160,133); doc.rect(15,y,180,8,'F');
+  doc.setFillColor(27,42,78); doc.rect(15,y,180,8,'F');
   doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(10);
   doc.text("MONTANTS \u00c0 R\u00c9GLER \u00c0 L'ENTR\u00c9E", w/2, y+6, {align:'center'});
   y+=14;
 
   // Tableau
-  doc.setFillColor(44,62,80); doc.rect(25,y,160,8,'F');
+  doc.setFillColor(27,42,78); doc.rect(25,y,160,8,'F');
   doc.setTextColor(255); doc.setFontSize(9); doc.setFont('helvetica','bold');
   doc.text('D\u00e9signation',30,y+6); doc.text('Montant',170,y+6,{align:'right'});
   y+=10;
 
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','normal'); doc.setFontSize(9);
   // D\u00e9p\u00f4t
   doc.text('D\u00e9p\u00f4t de garantie'+(depot===0?' (aucun)':''),30,y+5);
   doc.text(fmt(depot),170,y+5,{align:'right'});
@@ -6431,8 +6443,8 @@ function genEntreePDF(bail, P, returnBlob) {
   doc.line(25,y+8,185,y+8); y+=14;
 
   // Total
-  doc.setFillColor(232,246,241); doc.rect(25,y,160,10,'F');
-  doc.setDrawColor(22,160,133); doc.line(25,y,185,y);
+  doc.setFillColor(244,245,247); doc.rect(25,y,160,10,'F');
+  doc.setDrawColor(27,42,78); doc.line(25,y,185,y);
   doc.setFont('helvetica','bold'); doc.setFontSize(11);
   doc.text("TOTAL \u00c0 VERSER \u00c0 L'ENTR\u00c9E",30,y+7);
   doc.text(fmt(totalEntree),170,y+7,{align:'right'});
@@ -6446,10 +6458,10 @@ function genEntreePDF(bail, P, returnBlob) {
   y+=6;
 
   // Info prochaine \u00e9ch\u00e9ance
-  doc.setDrawColor(189,195,199); doc.line(20,y,190,y); y+=6;
-  doc.setFillColor(240,244,248); doc.rect(15,y,180,20,'F');
-  doc.setDrawColor(189,195,199); doc.rect(15,y,180,20,'S');
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.setDrawColor(216,220,227); doc.line(20,y,190,y); y+=6;
+  doc.setFillColor(244,245,247); doc.rect(15,y,180,20,'F');
+  doc.setDrawColor(216,220,227); doc.rect(15,y,180,20,'S');
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','bold'); doc.setFontSize(9);
   doc.text('Pour information \u2014 prochaine \u00e9ch\u00e9ance',20,y+6);
   doc.setFont('helvetica','normal'); doc.setFontSize(8);
   const jourEch = bail.jourEcheance || 1;
@@ -6465,13 +6477,13 @@ function genEntreePDF(bail, P, returnBlob) {
   doc.text(lines,20,y); y+=lines.length*3.5+2;
 
   y+=6;
-  doc.setTextColor(44,62,80); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.setTextColor(27,42,78); doc.setFont('helvetica','normal'); doc.setFontSize(9);
   doc.text(`Fait \u00e0 ${P.ville||'___________'}, le ${todayFr()}`,25,y);
 
   drawRibBox(doc, P, h);
 
   // Footer
-  doc.setFillColor(22,160,133); doc.rect(0,h-10,w,10,'F');
+  doc.setFillColor(27,42,78); doc.rect(0,h-10,w,10,'F');
   doc.setTextColor(255); doc.setFontSize(6); doc.setFont('helvetica','normal');
   doc.text('Document g\u00e9n\u00e9r\u00e9 automatiquement - Gestion Locative',w/2,h-4,{align:'center'});
 
@@ -6525,14 +6537,14 @@ function drawRibBox(doc, P, pageHeight) {
   const boxH = 22;
 
   doc.setFillColor(248,250,252); doc.rect(x, y, w, boxH, 'F');
-  doc.setDrawColor(189,195,199); doc.rect(x, y, w, boxH, 'S');
+  doc.setDrawColor(216,220,227); doc.rect(x, y, w, boxH, 'S');
   // Bandeau titre
-  doc.setFillColor(44,62,80); doc.rect(x, y, w, 5, 'F');
+  doc.setFillColor(27,42,78); doc.rect(x, y, w, 5, 'F');
   doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(7);
   doc.text('COORDONN\u00c9ES BANCAIRES POUR LE R\u00c8GLEMENT', x + w/2, y + 3.5, {align:'center'});
 
   let ry = y + 9;
-  doc.setTextColor(44,62,80);
+  doc.setTextColor(27,42,78);
   const titulaire = P.titulaire || P.nom || '';
   const banque = P.banque || '';
   if (titulaire || banque) {
