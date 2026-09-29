@@ -1843,7 +1843,7 @@ function updateBadges() {
   const fb = getFilteredBiens(), fba = getFilteredBaux(), fl = getFilteredLocataires();
   document.getElementById('badge-proprios').textContent = data.proprios.length;
   document.getElementById('badge-biens').textContent = fb.length;
-  document.getElementById('badge-locataires').textContent = fl.length;
+  document.getElementById('badge-locataires').textContent = fl.filter(l => !isAncienLocataire(l)).length;
   document.getElementById('badge-baux').textContent = fba.filter(b=>b.statut==='Actif').length;
   // Badge impayés : compte dynamique
   const impayesBadge = document.getElementById('badge-impayes');
@@ -3542,7 +3542,7 @@ function renderLocataires() {
     return;
   }
 
-  tb.innerHTML = filtered.map((l) => {
+  const _renderLocRow = (l) => {
     const i = data.locataires.indexOf(l);
     const isSoc = (l.type === 'Société') || (!l.type && societeCiv.includes(l.civilite));
     // #2/#41 XSS : \u00e9chappement
@@ -3703,7 +3703,42 @@ function renderLocataires() {
     }
 
     return row;
-  }).join('');
+  };
+  // Anciens locataires : ont eu au moins un bail, mais plus aucun bail actif.
+  // Masqu\u00e9s par d\u00e9faut (section repliable), jamais supprim\u00e9s.
+  const actuels = filtered.filter(l => !isAncienLocataire(l));
+  const anciens = filtered.filter(l => isAncienLocataire(l));
+  let html = actuels.length
+    ? actuels.map(_renderLocRow).join('')
+    : '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-light);">Aucun locataire actuel.</td></tr>';
+  if (anciens.length) {
+    const show = getShowAnciensLocataires();
+    html += `<tr><td colspan="9" style="padding:10px 12px;background:rgba(0,0,0,0.03);border-top:2px solid var(--border);">
+      <button onclick="toggleAnciensLocataires()" style="background:none;border:none;cursor:pointer;font-size:12px;font-weight:600;color:var(--text-light);text-transform:uppercase;letter-spacing:0.5px;padding:0;">
+        ${show ? '\u25BE' : '\u25B8'} Anciens locataires (${anciens.length})
+      </button>
+      <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">${show ? '' : 'masqu\u00e9s \u2014 donn\u00e9es conserv\u00e9es'}</span>
+    </td></tr>`;
+    if (show) html += anciens.map(l => _renderLocRow(l).replace('<tr>', '<tr class="loc-ancien" style="opacity:0.7;">')).join('');
+  }
+  tb.innerHTML = html;
+}
+
+// Un locataire est "ancien" s'il a eu au moins un bail et qu'aucun n'est actif.
+// Un locataire sans aucun bail (dossier en cours) reste dans la liste principale.
+function isAncienLocataire(l) {
+  const baux = data.baux.filter(b => b.locId === l.id);
+  return baux.length > 0 && !baux.some(b => b.statut === 'Actif');
+}
+function getShowAnciensLocataires() {
+  if (window._showAnciensLoc != null) return window._showAnciensLoc;
+  try { window._showAnciensLoc = localStorage.getItem('gl_show_anciens_loc') === '1'; } catch (e) { window._showAnciensLoc = false; }
+  return window._showAnciensLoc;
+}
+function toggleAnciensLocataires() {
+  window._showAnciensLoc = !getShowAnciensLocataires();
+  try { localStorage.setItem('gl_show_anciens_loc', window._showAnciensLoc ? '1' : '0'); } catch (e) {}
+  renderLocataires();
 }
 
 function renderBaux() {
