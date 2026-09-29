@@ -4703,10 +4703,33 @@ function openModal(type, editId) {
       const sel = existingBail && existingBail.bienId === b.id ? ' selected' : '';
       return `<option value="${b.id}" data-proprio="${b.proprioId||''}"${sel}>${b.designation} (${b.type}) - ${pr?pr.nom:'?'}</option>`;
     }).join('');
-    const locOpts = data.locataires.map(l=>{
-      const sel = existingBail && existingBail.locId === l.id ? ' selected' : '';
-      return `<option value="${l.id}"${sel}>${l.civilite||''} ${l.prenom||''} ${l.nom||''}</option>`;
+    // Pr\u00e9s\u00e9lection (nouveau bail) : le locataire le plus r\u00e9cent SANS bail actif ;
+    // sinon "Nouveau locataire". Avant : le 1er de la liste (souvent l'ancien locataire).
+    let defaultLocId = '';
+    if (!existingBail) {
+      const sansBailActif = data.locataires.filter(l => !data.baux.some(b => b.locId === l.id && b.statut === 'Actif'));
+      defaultLocId = sansBailActif.length ? sansBailActif[sansBailActif.length - 1].id : '__new__';
+    }
+    const locOpts = (existingBail ? '' : `<option value="__new__"${defaultLocId==='__new__'?' selected':''}>\u2795 Nouveau locataire\u2026</option>`) + data.locataires.map(l=>{
+      const sel = existingBail ? (existingBail.locId === l.id ? ' selected' : '') : (defaultLocId === l.id ? ' selected' : '');
+      const actif = data.baux.some(b => b.locId === l.id && b.statut === 'Actif');
+      return `<option value="${l.id}"${sel}>${l.civilite||''} ${l.prenom||''} ${l.nom||''}${actif?' (bail actif)':''}</option>`;
     }).join('');
+    const newLocDisplay = defaultLocId === '__new__' ? '' : 'display:none;';
+    const newLocBlock = existingBail ? '' : `
+      <div id="m-ba-newloc" style="${newLocDisplay}border:1px dashed var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;">
+        <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Nouveau locataire</div>
+        <div class="form-row">
+          <div class="form-group"><label>Civilit\u00e9</label><select id="m-ba-nl-civ"><option>M.</option><option>Mme</option><option>Mlle</option><option>M. et Mme</option></select></div>
+          <div class="form-group"><label>Nom</label><input id="m-ba-nl-nom"></div>
+          <div class="form-group"><label>Pr\u00e9nom</label><input id="m-ba-nl-prenom"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Email</label><input id="m-ba-nl-email" type="email"></div>
+          <div class="form-group"><label>T\u00e9l\u00e9phone</label><input id="m-ba-nl-tel"></div>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);">Adresse, soci\u00e9t\u00e9, etc. : compl\u00e9table ensuite depuis la fiche locataire.</div>
+      </div>`;
     const perioLoyer = eb.periodiciteLoyer || 'mensuelle';
     const perioCharges = eb.periodiciteCharges || 'mensuelle';
     const chargesMontant = perioCharges === 'trimestrielle' ? (eb.chargesTrimestrielles||0) : (eb.charges||0);
@@ -4738,7 +4761,8 @@ function openModal(type, editId) {
     body.innerHTML = `
       <div class="form-row"><div class="form-group"><label>Bien (le propriétaire est déduit automatiquement)</label><select id="m-ba-bien" onchange="fillBailProprio()">${bienOpts}</select></div></div>
       <div class="form-row"><div class="form-group"><label>Propriétaire (auto)</label><input id="m-ba-proprio-display" readonly style="background:#f0f0f0;color:var(--primary);font-weight:600;"></div>
-      <div class="form-group"><label>Locataire</label><select id="m-ba-loc">${locOpts}</select></div></div>
+      <div class="form-group"><label>Locataire</label><select id="m-ba-loc" onchange="toggleBailNewLoc()">${locOpts}</select></div></div>
+      ${newLocBlock}
       <div class="form-row"><div class="form-group"><label>Date début</label><input id="m-ba-debut" type="date" value="${eb.debut||''}"></div>
       <div class="form-group"><label>Date fin</label><input id="m-ba-fin" type="date" value="${eb.fin||''}"></div></div>
       <div class="form-row"><div class="form-group"><label>Loyer HC (€)</label><input id="m-ba-loyer" type="number" step="0.01" value="${eb.loyer!=null?eb.loyer:''}"></div>
@@ -4757,6 +4781,12 @@ function openModal(type, editId) {
     }
     setTimeout(fillBailProprio, 50);
   }
+}
+
+// Affiche/masque le mini-formulaire "Nouveau locataire" du modal bail
+function toggleBailNewLoc() {
+  const blk = document.getElementById('m-ba-newloc');
+  if (blk) blk.style.display = gv('m-ba-loc') === '__new__' ? '' : 'none';
 }
 
 // Affiche/masque le s\u00e9lecteur "Trimestres" selon la p\u00e9riodicit\u00e9 loyer/charges
@@ -4795,12 +4825,7 @@ function fillBailProprio() {
 
 
 function openModalBailForBien(bienId) {
-  if (!data.locataires.length) {
-    if (confirm('Aucun locataire enregistr\u00e9. Voulez-vous en ajouter un d\'abord ?')) {
-      openModal('locataire');
-    }
-    return;
-  }
+  // Le locataire peut d\u00e9sormais \u00eatre cr\u00e9\u00e9 directement depuis le formulaire de bail
   window._openBienFicheAfterSave = bienId;
   openModal('bail');
   // Pre-select the bien in the dropdown
@@ -5278,7 +5303,10 @@ function saveBail() {
   const chargesMontant = Math.max(0, parseFloat(gv('m-ba-charges'))||0);
   const loyerMontant = Math.max(0, parseFloat(gv('m-ba-loyer'))||0);
   const depotMontant = Math.max(0, parseFloat(gv('m-ba-depot'))||0);
-  const locId = gv('m-ba-loc');
+  let locId = gv('m-ba-loc');
+  const isNewLoc = locId === '__new__';
+  if (isNewLoc && !gv('m-ba-nl-nom').trim()) { alert('Indiquez au moins le nom du nouveau locataire.'); return; }
+  if (!locId) { alert('Choisissez un locataire.'); return; }
   const newDebut = gv('m-ba-debut'), newFin = gv('m-ba-fin');
   // #35 Validation format des dates (vide accept\u00e9 mais format invalide refus\u00e9)
   const dateRe = /^\d{4}-\d{2}-\d{2}$/;
@@ -5299,6 +5327,57 @@ function saveBail() {
   if (overlap) {
     alert('Un bail pour ce bien et ce locataire existe d\u00e9j\u00e0 (' + overlap.id + ') sur une p\u00e9riode qui se chevauche. V\u00e9rifiez les dates de d\u00e9but / fin.');
     return;
+  }
+  // Changement de locataire : un autre bail actif sur ce bien chevauche le nouveau
+  const bauxEnCours = data.baux.filter(b => {
+    if (b.bienId !== bienId || b.locId === locId || b.statut !== 'Actif') return false;
+    const aD = b.debut || '0000-01-01', aF = b.fin || '9999-12-31';
+    const nD = newDebut || '0000-01-01', nF = newFin || '9999-12-31';
+    return !(nF < aD || nD > aF);
+  });
+  const aCloturer = [];
+  if (bauxEnCours.length) {
+    const noms = bauxEnCours.map(b => { const l = data.locataires.find(x => x.id === b.locId); return b.id + ' (' + (l ? ((l.prenom||'') + ' ' + (l.nom||'')).trim() : '?') + ')'; }).join(', ');
+    let veille = '';
+    if (newDebut) { const d = new Date(newDebut + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); veille = d.toISOString().slice(0,10); }
+    const peutCloturer = veille && bauxEnCours.every(b => !b.debut || b.debut <= veille);
+    let dateSortie = '';
+    if (peutCloturer) {
+      const veilleFr = veille.split('-').reverse().join('/');
+      let saisie = prompt('Ce bien a encore un bail actif : ' + noms + '.\n\nDate de sortie de l\'ancien locataire (JJ/MM/AAAA) \u2014 le bail sera cl\u00f4tur\u00e9 \u00e0 cette date et pass\u00e9 en \u00ab Termin\u00e9 \u00bb.\nAnnuler = ne pas y toucher.', veilleFr);
+      if (saisie !== null) {
+        const m = String(saisie).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/) ;
+        const iso = m ? m[3] + '-' + m[2].padStart(2,'0') + '-' + m[1].padStart(2,'0') : (/^\d{4}-\d{2}-\d{2}$/.test(String(saisie).trim()) ? String(saisie).trim() : '');
+        if (!iso || isNaN(new Date(iso + 'T12:00:00Z').getTime())) { alert('Date invalide. Format attendu : JJ/MM/AAAA.'); return; }
+        if (iso >= newDebut) { alert('La date de sortie doit \u00eatre ant\u00e9rieure \u00e0 la date d\'entr\u00e9e du nouveau bail.'); return; }
+        if (bauxEnCours.some(b => b.debut && iso < b.debut)) { alert('La date de sortie est ant\u00e9rieure au d\u00e9but de l\'ancien bail.'); return; }
+        dateSortie = iso;
+        bauxEnCours.forEach(b => aCloturer.push(b));
+      } else if (!confirm('Cr\u00e9er quand m\u00eame le nouveau bail ? Le bien aura 2 baux actifs en m\u00eame temps (loyers en double dans le suivi).')) {
+        return;
+      }
+    } else if (!confirm('Ce bien a encore un bail actif qui chevauche : ' + noms + '.\nRenseignez la date de d\u00e9but pour pouvoir le cl\u00f4turer automatiquement.\n\nCr\u00e9er quand m\u00eame le nouveau bail ?')) {
+      return;
+    }
+    if (aCloturer.length) {
+      aCloturer.forEach(b => {
+        const ancienneFin = b.fin || '';
+        b.fin = dateSortie;
+        b.statut = 'Termin\u00e9';
+        logActivity({ type: 'bail', proprioId: b.proprioId, locataireId: b.locId, bailId: b.id, bienId: b.bienId, details: 'Bail cl\u00f4tur\u00e9 au ' + b.fin + (ancienneFin && ancienneFin !== b.fin ? ' (fin pr\u00e9vue ' + ancienneFin + ')' : '') + ' \u2014 changement de locataire' });
+      });
+    }
+  }
+  // Cr\u00e9ation du nouveau locataire (apr\u00e8s toutes les validations)
+  if (isNewLoc) {
+    const newLoc = {
+      id: nextId('L', data.locataires), type: 'Particulier',
+      civilite: gv('m-ba-nl-civ') || 'M.', nom: gv('m-ba-nl-nom').trim(), prenom: gv('m-ba-nl-prenom').trim(),
+      siret: '', representantPrenom: '', representantNom: '', representantFonction: '',
+      adresse: '', cp: '', ville: '', tel: gv('m-ba-nl-tel').trim(), email: gv('m-ba-nl-email').trim()
+    };
+    data.locataires.push(newLoc);
+    locId = newLoc.id;
   }
   // #27 Trimestres pertinents seulement si loyer OU charges trimestriels
   const trimestresValue = (perioLoyer === 'trimestrielle' || perioCharges === 'trimestrielle') ? gv('m-ba-trimestres') : '';
